@@ -106,9 +106,6 @@ importers:
       '@aws-sdk/lib-storage':
         specifier: ^3.600.0
         version: 3.1029.0(@aws-sdk/client-s3@3.1029.0)
-      crypto:
-        specifier: '*'
-        version: 1.0.1
       ioredis:
         specifier: ^5.4.1
         version: 5.10.1
@@ -119,6 +116,9 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
     devDependencies:
+      '@types/node':
+        specifier: ^20.14.0
+        version: 20.19.39
       '@types/pg':
         specifier: ^8.11.6
         version: 8.20.0
@@ -1435,10 +1435,6 @@ packages:
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
-
-  crypto@1.0.1:
-    resolution: {integrity: sha512-VxBKmeNcqQdiUQUW2Tzq0t377b54N2bMtXO/qiLa+6eRRmmC4qT3D4OnTGoT/U6O9aklQ/jTwbOtRMTTY8G0Ig==}
-    deprecated: This package is no longer supported. It's now a built-in Node module. If you've depended on crypto, you should switch to the one that's built-in.
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -3727,8 +3723,6 @@ snapshots:
       path-key: 3.1.1
       shebang-command: 2.0.0
       which: 2.0.2
-
-  crypto@1.0.1: {}
 
   debug@4.4.3:
     dependencies:

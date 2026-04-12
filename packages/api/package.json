@@ -1,7 +1,6 @@
 {
   "name": "@media-hub/api",
   "version": "1.0.0",
-  "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/server.ts",

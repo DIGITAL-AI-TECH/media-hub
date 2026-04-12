@@ -1,7 +1,6 @@
 {
   "name": "@media-hub/worker",
   "version": "1.0.0",
-  "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/worker.ts",
