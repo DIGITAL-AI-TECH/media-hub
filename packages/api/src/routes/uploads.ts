@@ -56,7 +56,9 @@ export async function uploadRoutes(fastify: FastifyInstance) {
 
     const mimeType = data.mimetype || 'application/octet-stream';
     const mediaType = detectMediaType(mimeType);
-    const fileExt = data.filename.split('.').pop() || 'bin';
+    // Sanitize extension — allowlist alphanumeric only to prevent path traversal in S3 keys
+    const rawExt = data.filename.split('.').pop() ?? 'bin';
+    const fileExt = /^[a-zA-Z0-9]{1,10}$/.test(rawExt) ? rawExt : 'bin';
 
     // Pre-create file record to get an ID
     const fileRecord = await createFile(fastify.db, {
@@ -74,7 +76,9 @@ export async function uploadRoutes(fastify: FastifyInstance) {
     try {
       await streamToS3(data.file, s3KeyRaw, mimeType);
     } catch (err) {
-      await fastify.db.query(`UPDATE files SET status = 'failed', error_message = $1 WHERE id = $2`, [String(err), fileRecord.id]);
+      // Log full error internally, expose only safe message to DB (never leak S3 internals)
+      fastify.log.error({ err }, 'S3 upload failed');
+      await fastify.db.query(`UPDATE files SET status = 'failed', error_message = $1 WHERE id = $2`, ['Upload to storage failed', fileRecord.id]);
       throw err;
     }
 

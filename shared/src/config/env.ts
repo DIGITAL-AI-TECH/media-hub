@@ -14,6 +14,7 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().default(3000),
   API_HOST: z.string().default('0.0.0.0'),
   ALLOWED_ORIGINS: z.string().default('*'),
+  // Note: ALLOWED_ORIGINS='*' in production logs a warning — set explicit origins for production
   WORKER_CONCURRENCY: z.coerce.number().default(2),
 });
 
@@ -25,7 +26,11 @@ export function loadEnv(): Env {
     console.error('❌ Invalid environment variables:', parsed.error.flatten().fieldErrors);
     process.exit(1);
   }
-  return parsed.data;
+  const data = parsed.data;
+  if (data.ALLOWED_ORIGINS === '*' && data.NODE_ENV === 'production') {
+    console.warn('[WARN] ALLOWED_ORIGINS=* in production — set explicit origins via env var');
+  }
+  return data;
 }
 
 export const env = loadEnv();

@@ -67,7 +67,7 @@ export async function updateFileStatus(
   pool: Pool,
   fileId: string,
   status: FileStatus,
-  extra?: { processedUrls?: ProcessedUrls; errorMessage?: string; s3KeyProcessed?: string }
+  extra?: { processedUrls?: ProcessedUrls; errorMessage?: string; s3KeyProcessed?: string; tenantId?: string }
 ): Promise<void> {
   const updates: string[] = ['status = $2', 'updated_at = NOW()'];
   const params: unknown[] = [fileId, status];
@@ -92,8 +92,12 @@ export async function updateFileStatus(
     params.push(extra.s3KeyProcessed);
   }
 
+  // Always include tenant_id in WHERE when provided — enforces tenant isolation in worker context
+  const tenantClause = extra?.tenantId ? ` AND tenant_id = $${idx}` : '';
+  if (extra?.tenantId) params.push(extra.tenantId);
+
   await pool.query(
-    `UPDATE files SET ${updates.join(', ')} WHERE id = $1`,
+    `UPDATE files SET ${updates.join(', ')} WHERE id = $1${tenantClause}`,
     params
   );
 }

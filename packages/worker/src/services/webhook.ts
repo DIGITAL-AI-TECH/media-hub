@@ -2,7 +2,37 @@ import crypto from 'crypto';
 import { getPool } from '@media-hub/shared';
 import { checkAndFinalizeUpload, updateUploadStatus } from '@media-hub/shared';
 
+// SSRF protection: block private/loopback/link-local IPs and non-HTTPS URLs
+function validateCallbackUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid callback URL: ${url}`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Callback URL must use HTTPS');
+  }
+  const hostname = parsed.hostname;
+  // Block loopback, private ranges, link-local, and metadata endpoints
+  const blocked = [
+    /^localhost$/i,
+    /^127\./,
+    /^10\./,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\./,
+    /^169\.254\./,
+    /^::1$/,
+    /^fc00:/i,
+    /^fe80:/i,
+  ];
+  if (blocked.some(r => r.test(hostname))) {
+    throw new Error(`Callback URL targets a blocked address: ${hostname}`);
+  }
+}
+
 async function sendWithRetry(url: string, payload: unknown, secret: string | null, attempt = 0): Promise<void> {
+  validateCallbackUrl(url);
   const body = JSON.stringify(payload);
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const headers: Record<string, string> = {

@@ -13,7 +13,7 @@ const pool = getPool();
 const worker = new Worker<ProcessingJob>(
   'media-processing',
   async (job: Job<ProcessingJob>) => {
-    const { fileId, mediaType, uploadId, tenantSlug } = job.data;
+    const { fileId, mediaType, uploadId, tenantId, tenantSlug } = job.data;
     console.log(`[worker] Processing job ${job.id}: file=${fileId} type=${mediaType}`);
 
     try {
@@ -24,16 +24,21 @@ const worker = new Worker<ProcessingJob>(
         default:        await genericProcessor(job); break;
       }
     } catch (err) {
-      await updateFileStatus(pool, fileId, 'failed', {
-        errorMessage: err instanceof Error ? err.message : String(err),
-      });
+      try {
+        await updateFileStatus(pool, fileId, 'failed', {
+          errorMessage: err instanceof Error ? err.message : String(err),
+          tenantId,
+        });
+      } catch (updateErr) {
+        console.error(`[worker] Failed to update file status for ${fileId}:`, updateErr);
+      }
       throw err;
     }
 
-    // Fetch upload callback info and notify
+    // Fetch upload callback info — include tenant_id to enforce isolation
     const uploadResult = await pool.query(
-      `SELECT callback_url, callback_secret, external_ref FROM uploads WHERE id = $1`,
-      [uploadId]
+      `SELECT callback_url, callback_secret, external_ref FROM uploads WHERE id = $1 AND tenant_id = $2`,
+      [uploadId, tenantId]
     );
     const upload = uploadResult.rows[0];
     if (upload) {

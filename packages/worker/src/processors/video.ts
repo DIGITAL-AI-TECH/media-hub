@@ -82,17 +82,25 @@ async function generateMasterPlaylist(
   return masterPath;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EXT_RE  = /^[a-zA-Z0-9]{1,10}$/;
+
 export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
-  const { fileId, uploadId, tenantSlug, s3KeyRaw } = job.data;
+  const { fileId, uploadId, tenantId, tenantSlug, s3KeyRaw } = job.data;
   const pool = getPool();
+
+  // Validate fileId before using in filesystem path (prevent path injection)
+  if (!UUID_RE.test(fileId)) throw new Error(`Invalid fileId format: ${fileId}`);
+
   const tmpDir = `/tmp/media-hub-${fileId}`;
 
   try {
     await fs.mkdir(tmpDir, { recursive: true });
-    await updateFileStatus(pool, fileId, 'processing');
+    await updateFileStatus(pool, fileId, 'processing', { tenantId });
 
-    // Download raw file
-    const ext = s3KeyRaw.split('.').pop() || 'mp4';
+    // Sanitize extension — allowlist only alphanumeric
+    const rawExt = s3KeyRaw.split('.').pop() ?? 'mp4';
+    const ext = EXT_RE.test(rawExt) ? rawExt : 'mp4';
     const localRaw = path.join(tmpDir, `raw.${ext}`);
     const s3Stream = await downloadFromS3(s3KeyRaw);
     await pipeline(s3Stream, createWriteStream(localRaw));
@@ -147,6 +155,7 @@ export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
     await updateFileStatus(pool, fileId, 'done', {
       processedUrls,
       s3KeyProcessed: s3BaseKey,
+      tenantId,
     });
 
   } finally {
