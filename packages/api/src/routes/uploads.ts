@@ -37,10 +37,7 @@ export async function uploadRoutes(fastify: FastifyInstance) {
   });
 
   // POST /v1/uploads/:uploadId/files — upload a file (streamed)
-  fastify.post('/v1/uploads/:uploadId/files', { preHandler: requireAuth }, async (
-    request: FastifyRequest<{ Params: { uploadId: string } }>,
-    reply: FastifyReply
-  ) => {
+  fastify.post<{ Params: { uploadId: string } }>('/v1/uploads/:uploadId/files', { preHandler: requireAuth }, async (request, reply) => {
     const { uploadId } = request.params;
 
     // Verify upload belongs to tenant
@@ -119,10 +116,7 @@ export async function uploadRoutes(fastify: FastifyInstance) {
   });
 
   // GET /v1/uploads/:uploadId — get upload with files
-  fastify.get('/v1/uploads/:uploadId', { preHandler: requireAuth }, async (
-    request: FastifyRequest<{ Params: { uploadId: string } }>,
-    reply: FastifyReply
-  ) => {
+  fastify.get<{ Params: { uploadId: string } }>('/v1/uploads/:uploadId', { preHandler: requireAuth }, async (request, reply) => {
     const { uploadId } = request.params;
     const upload = await getUpload(fastify.db, uploadId, request.tenant.id);
     if (!upload) {

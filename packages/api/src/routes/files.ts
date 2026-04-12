@@ -4,10 +4,7 @@ import { getFile, deleteFile, deleteFromS3 } from '@media-hub/shared';
 
 export async function fileRoutes(fastify: FastifyInstance) {
   // GET /v1/files/:fileId
-  fastify.get('/v1/files/:fileId', { preHandler: requireAuth }, async (
-    request: FastifyRequest<{ Params: { fileId: string } }>,
-    reply: FastifyReply
-  ) => {
+  fastify.get<{ Params: { fileId: string } }>('/v1/files/:fileId', { preHandler: requireAuth }, async (request, reply) => {
     const file = await getFile(fastify.db, request.params.fileId, request.tenant.id);
     if (!file) {
       return reply.status(404).send({ error: 'NOT_FOUND', message: 'File not found' });
@@ -29,12 +26,9 @@ export async function fileRoutes(fastify: FastifyInstance) {
   });
 
   // DELETE /v1/files/:fileId
-  fastify.delete('/v1/files/:fileId', {
+  fastify.delete<{ Params: { fileId: string } }>('/v1/files/:fileId', {
     preHandler: [requireAuth, requireScope('media:delete')],
-  }, async (
-    request: FastifyRequest<{ Params: { fileId: string } }>,
-    reply: FastifyReply
-  ) => {
+  }, async (request, reply) => {
     const file = await getFile(fastify.db, request.params.fileId, request.tenant.id);
     if (!file) {
       return reply.status(404).send({ error: 'NOT_FOUND', message: 'File not found' });

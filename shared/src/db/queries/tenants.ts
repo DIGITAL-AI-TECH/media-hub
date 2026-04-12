@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 
 export interface Tenant {
   id: string;

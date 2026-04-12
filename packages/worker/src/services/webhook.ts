@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 import { getPool } from '@media-hub/shared';
 import { checkAndFinalizeUpload, updateUploadStatus } from '@media-hub/shared';
 
