@@ -24,6 +24,6 @@ COPY --from=build /app/packages/worker/dist ./packages/worker/dist
 COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/packages/worker/package.json ./packages/worker/
 COPY --from=build /app/shared/package.json ./shared/
-COPY pnpm-workspace.yaml package.json ./
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile
 CMD ["node", "packages/worker/dist/worker.js"]

@@ -22,7 +22,7 @@ COPY --from=build /app/packages/api/dist ./packages/api/dist
 COPY --from=build /app/shared/dist ./shared/dist
 COPY --from=build /app/packages/api/package.json ./packages/api/
 COPY --from=build /app/shared/package.json ./shared/
-COPY pnpm-workspace.yaml package.json ./
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile
 EXPOSE 3000
 CMD ["node", "packages/api/dist/server.js"]
