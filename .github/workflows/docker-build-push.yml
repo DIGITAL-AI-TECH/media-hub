@@ -1,0 +1,218 @@
+name: Build, Push & Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: registry.digital-ai.tech
+  REPO_PREFIX: digital-ai
+  STACK: media-hub
+
+jobs:
+  # ─── Detectar quais serviços mudaram ────────────────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      worker: ${{ steps.filter.outputs.worker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'packages/api/**'
+              - 'shared/**'
+              - 'pnpm-workspace.yaml'
+              - 'tsconfig.base.json'
+            worker:
+              - 'packages/worker/**'
+              - 'shared/**'
+              - 'pnpm-workspace.yaml'
+              - 'tsconfig.base.json'
+
+  # ─── Build API ──────────────────────────────────────────────────────────────
+  build-api:
+    needs: [changes]
+    runs-on: [self-hosted, swarm]
+    if: needs.changes.outputs.api == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.REPO_PREFIX }}/media-hub-api:latest
+            ${{ env.REGISTRY }}/${{ env.REPO_PREFIX }}/media-hub-api:${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+  # ─── Build Worker ───────────────────────────────────────────────────────────
+  build-worker:
+    needs: [changes]
+    runs-on: [self-hosted, swarm]
+    if: needs.changes.outputs.worker == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/worker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.REPO_PREFIX }}/media-hub-worker:latest
+            ${{ env.REGISTRY }}/${{ env.REPO_PREFIX }}/media-hub-worker:${{ github.sha }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+  # ─── DNS Sync ───────────────────────────────────────────────────────────────
+  dns-sync:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync DNS Cloudflare (CNAME → vps.digital-ai.tech)
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+        run: |
+          python3 << 'EOF'
+          import os, json, urllib.request
+          cf_token = os.environ['CF_API_TOKEN']
+          zone_id  = os.environ['CF_ZONE_ID']
+          target   = 'vps.digital-ai.tech'
+          domains  = ['media.digital-ai.tech']
+          headers = {'Authorization': f'Bearer {cf_token}', 'Content-Type': 'application/json'}
+          for domain in domains:
+              url = f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?name={domain}&type=CNAME'
+              req = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(req) as resp:
+                  data = json.loads(resp.read())
+              payload = json.dumps({'type':'CNAME','name':domain,'content':target,'proxied':False,'ttl':3600}).encode()
+              records = data.get('result', [])
+              if records:
+                  url = f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{records[0]["id"]}'
+                  req = urllib.request.Request(url, data=payload, headers=headers, method='PUT')
+                  print(f'Atualizando CNAME: {domain} → {target}')
+              else:
+                  url = f'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records'
+                  req = urllib.request.Request(url, data=payload, headers=headers, method='POST')
+                  print(f'Criando CNAME: {domain} → {target}')
+              with urllib.request.urlopen(req) as resp:
+                  result = json.loads(resp.read())
+              if result.get('success'):
+                  print(f'  ✓ {domain} OK')
+              else:
+                  print(f'  ✗ {domain} FALHOU: {result.get("errors")}')
+                  raise SystemExit(1)
+          EOF
+
+  # ─── Deploy ─────────────────────────────────────────────────────────────────
+  deploy:
+    needs: [changes, build-api, build-worker, dns-sync]
+    runs-on: [self-hosted, swarm]
+    if: >
+      always() &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
+    env:
+      DATABASE_URL: ${{ secrets.MEDIA_HUB_DATABASE_URL }}
+      S3_BUCKET: ${{ secrets.MEDIA_HUB_S3_BUCKET }}
+      S3_REGION: ${{ secrets.MEDIA_HUB_S3_REGION }}
+      S3_ACCESS_KEY_ID: ${{ secrets.MEDIA_HUB_S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_HUB_S3_SECRET_ACCESS_KEY }}
+      CDN_BASE_URL: ${{ secrets.MEDIA_HUB_CDN_BASE_URL }}
+      ALLOWED_ORIGINS: ${{ secrets.MEDIA_HUB_ALLOWED_ORIGINS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Deploy no Swarm
+        run: |
+          set -e
+          STACK="${{ env.STACK }}"
+          SHA="${{ github.sha }}"
+          EVENT="${{ github.event_name }}"
+          REGISTRY="${{ env.REGISTRY }}"
+          REPO_PREFIX="${{ env.REPO_PREFIX }}"
+
+          update_service() {
+            local svc="$1" image="$2"
+            echo "==> Verificando: $image"
+            if docker pull "$image" > /dev/null 2>&1; then
+              docker service update --image "$image" --with-registry-auth "${STACK}_${svc}"
+              echo "==> ${svc}: atualizado."
+            else
+              echo "==> ${svc}: sem imagem nova. Pulando."
+            fi
+          }
+
+          STACK_EXISTS=$(docker stack ls --format '{{.Name}}' | grep -qx "${STACK}" && echo "true" || echo "false")
+
+          if [ "$STACK_EXISTS" = "false" ] || [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "==> $( [ "$STACK_EXISTS" = "false" ] && echo "PRIMEIRO DEPLOY" || echo "REDEPLOY MANUAL" )"
+            export VERSION=latest
+            docker stack deploy -c docker-stack.yml "${STACK}" --with-registry-auth
+            echo "==> Stack '${STACK}' deployado."
+          else
+            echo "==> DEPLOY INCREMENTAL — commit: ${SHA:0:7}"
+            update_service "api"    "${REGISTRY}/${REPO_PREFIX}/media-hub-api:${SHA}"
+            update_service "worker" "${REGISTRY}/${REPO_PREFIX}/media-hub-worker:${SHA}"
+          fi
+
+          docker stack ps "${STACK}" --filter "desired-state=running" \
+            --format "table {{.Name}}\t{{.Image}}\t{{.CurrentState}}"
+
+      - name: Notificar Discord
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_STATUS: ${{ job.status }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          ACTOR: ${{ github.actor }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$RUN_STATUS" = "success" ]; then
+            COLOR=3066993; STATUS_ICON="✅"; STATUS_TEXT="Deploy concluído"
+          else
+            COLOR=15158332; STATUS_ICON="❌"; STATUS_TEXT="Deploy falhou"
+          fi
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          MSG=$(echo "${COMMIT_MSG:-redeploy manual}" | head -1)
+          PAYLOAD=$(jq -n \
+            --arg title "${STATUS_ICON} ${STATUS_TEXT} — media-hub" \
+            --argjson color "$COLOR" \
+            --arg commit "\`${SHORT_SHA}\`" \
+            --arg trigger "$EVENT" \
+            --arg actor "$ACTOR" \
+            --arg msg "$MSG" \
+            '{embeds:[{title:$title,color:$color,fields:[
+              {name:"Commit",value:$commit,inline:true},
+              {name:"Trigger",value:$trigger,inline:true},
+              {name:"Actor",value:$actor,inline:true},
+              {name:"Mensagem",value:$msg,inline:false}
+            ]}]}')
+          curl -s -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"

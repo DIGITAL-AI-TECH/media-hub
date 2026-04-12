@@ -1,0 +1,7 @@
+stack_name: media-hub
+service_name: api
+
+domains:
+  - media.digital-ai.tech
+
+run_tests: false
