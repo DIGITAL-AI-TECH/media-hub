@@ -1,0 +1,106 @@
+{
+  "mcpServers": {
+    "crawl4prospect": {
+      "command": "mcp-remote",
+      "args": [
+        "https://mcp-crawl4prospect.digital-ai.tech/mcp"
+      ]
+    },
+    "google-sheets-mcp": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/609515f3-504a-4921-b62a-103b3a666ae6",
+        "--header",
+        "Authorization: Bearer 1kR8jpNeZZwo"
+      ]
+    },
+    "instagram-browser": {
+      "command": "mcp-remote",
+      "args": [
+        "https://agent-ig-browser-mcp.digital-ai.tech/sse",
+        "--header",
+        "Authorization: Bearer ig-mcp-2026-secret"
+      ]
+    },
+    "instagram-mcp": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/instagram-manager-mcp",
+        "--header",
+        "Authorization: Bearer 1kR8jpNeZZwo"
+      ]
+    },
+    "n8n-mcp": {
+      "command": "mcp-remote",
+      "args": [
+        "https://n8n-mcp.digital-ai.tech/mcp",
+        "--header",
+        "Authorization: Bearer 68789eef55ec514f8e4f0b13ba4d3fa5e5726a5420f09406f906d3ebdca56dec"
+      ]
+    },
+    "digital-ai-mcp": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/5608a4cc-c3e0-421c-8987-a1088e73098b",
+        "--header",
+        "Authorization: Bearer 8DfFk8CBNeYY"
+      ]
+    },
+    "perfexcrm": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/00917f2f-5b66-4f1e-a247-55cdbddb060c",
+        "--header",
+        "Authorization: Bearer 1kR8jpNeZZwo"
+      ]
+    },
+    "postgres-aetheria": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/19c3da8c-a5ba-487e-bc4c-555950880b88",
+        "--header",
+        "Authorization: Bearer 3GrpNdreRFxW"
+      ]
+    },
+    "postgres-dermaclinic": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/postgres-mcp-dermaclinic",
+        "--header",
+        "Authorization: Bearer 31TzMQbs7cjDway"
+      ]
+    },
+    "s3-mcp": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/ef272d0b-3f4f-4dd7-a63f-34cfc7563cf3",
+        "--header",
+        "Authorization: Bearer 1kR8jpNeZZwo"
+      ]
+    },
+    "swarm-deploy": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/swarm-deploy-mcp",
+        "--header",
+        "Authorization: Bearer 1KXPy7ylKRd3"
+      ]
+    },
+    "voice-synthesis": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/93db1ca1-0293-42de-bab4-ed248f4e9c72",
+        "--header",
+        "Authorization: Bearer 1kR8jpNeZZwo"
+      ]
+    },
+    "whatsapp": {
+      "command": "mcp-remote",
+      "args": [
+        "https://webhook.digital-ai.tech/mcp/02a26db8-edd6-43cc-b63a-c2579fd20fc1",
+        "--header",
+        "Authorization: Bearer 1kR8jpNeZZwo"
+      ]
+    }
+  }
+}
