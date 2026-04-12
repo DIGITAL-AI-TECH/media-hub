@@ -21,6 +21,7 @@ RUN pnpm --filter @media-hub/worker build
 
 FROM node:20-alpine AS runner
 RUN apk add --no-cache ffmpeg vips
+RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 COPY --from=build /app/packages/worker/dist ./packages/worker/dist
 COPY --from=build /app/shared/dist ./shared/dist
