@@ -50,7 +50,9 @@ services:
         - "traefik.docker.network=oraculusnet_v2"
         - "traefik.http.routers.media-hub-http.rule=Host(`media.digital-ai.tech`)"
         - "traefik.http.routers.media-hub-http.entrypoints=web"
-        - "traefik.http.routers.media-hub-http.middlewares=redirect-to-https@file"
+        - "traefik.http.routers.media-hub-http.middlewares=media-hub-https-redirect"
+        - "traefik.http.middlewares.media-hub-https-redirect.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.media-hub-https-redirect.redirectscheme.permanent=true"
 
   worker:
     image: registry.digital-ai.tech/digital-ai/media-hub-worker:${VERSION:-latest}
