@@ -9,7 +9,7 @@
       "Resource": "arn:aws:s3:::cdn.digital-ai.tech/media-hub/*",
       "Condition": {
         "StringNotEquals": {
-          "aws:Referer": "SUBSTITUIR_PELO_CF_S3_SECRET"
+          "aws:Referer": "https://cf-s3-gate-82b012c3c07306ff85ab1c5e7a03ab5d"
         }
       }
     },
