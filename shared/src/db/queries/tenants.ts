@@ -20,6 +20,7 @@ export interface ApiKey {
   last_used_at: Date | null;
   expires_at: Date | null;
   revoked_at: Date | null;
+  created_at: Date;
 }
 
 export interface ApiKeyWithTenant extends ApiKey {
@@ -61,6 +62,67 @@ export function generateApiKey(tenantSlug: string): { key: string; hash: string;
   const hash = crypto.createHash('sha256').update(key).digest('hex');
   const prefix = `mh_${tenantSlug}_`;
   return { key, hash, prefix };
+}
+
+export interface TenantWithKeyCount extends Tenant {
+  active_keys: number;
+}
+
+export interface ApiKeyPublic {
+  id: string;
+  tenant_id: string;
+  key_prefix: string;
+  label: string | null;
+  scopes: string[] | null;
+  last_used_at: Date | null;
+  expires_at: Date | null;
+  revoked_at: Date | null;
+  created_at: Date;
+  status: 'active' | 'revoked' | 'expired';
+}
+
+export async function listTenants(pool: Pool): Promise<TenantWithKeyCount[]> {
+  const result = await pool.query<TenantWithKeyCount>(
+    `SELECT t.*,
+       COUNT(ak.id) FILTER (WHERE ak.revoked_at IS NULL AND (ak.expires_at IS NULL OR ak.expires_at > NOW())) AS active_keys
+     FROM tenants t
+     LEFT JOIN api_keys ak ON ak.tenant_id = t.id
+     GROUP BY t.id
+     ORDER BY t.created_at DESC`
+  );
+  return result.rows;
+}
+
+export async function findTenantById(pool: Pool, id: string): Promise<Tenant | null> {
+  const result = await pool.query<Tenant>(
+    `SELECT * FROM tenants WHERE id = $1`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+export async function revokeApiKey(pool: Pool, keyId: string): Promise<ApiKey | null> {
+  const result = await pool.query<ApiKey>(
+    `UPDATE api_keys SET revoked_at = NOW() WHERE id = $1 AND revoked_at IS NULL RETURNING *`,
+    [keyId]
+  );
+  return result.rows[0] || null;
+}
+
+export async function listApiKeysByTenant(pool: Pool, tenantId: string): Promise<ApiKeyPublic[]> {
+  const result = await pool.query(
+    `SELECT id, tenant_id, key_prefix, label, scopes, last_used_at, expires_at, revoked_at, created_at,
+       CASE
+         WHEN revoked_at IS NOT NULL THEN 'revoked'
+         WHEN expires_at IS NOT NULL AND expires_at <= NOW() THEN 'expired'
+         ELSE 'active'
+       END AS status
+     FROM api_keys
+     WHERE tenant_id = $1
+     ORDER BY created_at DESC`,
+    [tenantId]
+  );
+  return result.rows as ApiKeyPublic[];
 }
 
 export async function createApiKey(

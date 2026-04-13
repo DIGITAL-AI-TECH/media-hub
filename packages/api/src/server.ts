@@ -7,6 +7,7 @@ import redisPlugin from './plugins/redis.js';
 import { healthRoutes } from './routes/health.js';
 import { uploadRoutes } from './routes/uploads.js';
 import { fileRoutes } from './routes/files.js';
+import { adminTenantRoutes } from './routes/admin/tenants.js';
 
 async function build() {
   const fastify = Fastify({
@@ -33,6 +34,7 @@ async function build() {
   await fastify.register(healthRoutes);
   await fastify.register(uploadRoutes);
   await fastify.register(fileRoutes);
+  await fastify.register(adminTenantRoutes);
 
   fastify.setErrorHandler((error, _request, reply) => {
     fastify.log.error(error);

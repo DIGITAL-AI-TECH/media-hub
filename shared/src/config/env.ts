@@ -16,6 +16,7 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().default('*'),
   // Note: ALLOWED_ORIGINS='*' in production logs a warning — set explicit origins for production
   WORKER_CONCURRENCY: z.coerce.number().default(2),
+  ADMIN_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
