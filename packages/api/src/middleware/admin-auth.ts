@@ -21,14 +21,13 @@ export async function requireAdmin(request: FastifyRequest, reply: FastifyReply)
 
   const received = authHeader.slice(7);
 
-  // Constant-time comparison to prevent timing attacks
+  // Constant-time comparison to prevent timing attacks.
+  // Hash both values with SHA-256 first so output is always 32 bytes,
+  // eliminating length-based side-channel leaks.
   try {
-    const receivedBuf = Buffer.from(received);
-    const expectedBuf = Buffer.from(env.ADMIN_KEY);
-    // Buffers must be same length for timingSafeEqual
-    const isValid =
-      receivedBuf.length === expectedBuf.length &&
-      crypto.timingSafeEqual(receivedBuf, expectedBuf);
+    const h1 = crypto.createHash('sha256').update(received).digest();
+    const h2 = crypto.createHash('sha256').update(env.ADMIN_KEY).digest();
+    const isValid = crypto.timingSafeEqual(h1, h2);
 
     if (!isValid) {
       request.log.warn({ ip: request.ip }, 'Admin auth failed — invalid key');

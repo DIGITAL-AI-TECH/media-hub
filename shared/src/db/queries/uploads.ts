@@ -47,11 +47,14 @@ export async function incrementUploadFilesCount(pool: Pool, uploadId: string): P
   );
 }
 
-export async function updateUploadStatus(pool: Pool, uploadId: string, status: UploadStatus): Promise<void> {
-  await pool.query(
-    `UPDATE uploads SET status = $1, updated_at = NOW() WHERE id = $2`,
+export async function updateUploadStatus(pool: Pool, uploadId: string, status: UploadStatus): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE uploads SET status = $1, updated_at = NOW()
+     WHERE id = $2 AND status NOT IN ('done', 'partial', 'failed')
+     RETURNING id`,
     [status, uploadId]
   );
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function checkAndFinalizeUpload(pool: Pool, uploadId: string): Promise<{ allDone: boolean; hasFailures: boolean }> {

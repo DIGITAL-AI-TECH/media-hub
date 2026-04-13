@@ -1,186 +1,199 @@
-# Feature Specification: Media Hub
+# Feature Specification: Media Hub — Admin API, CORS & S3 CORS
 
 **Created**: 2026-04-12
-**Status**: Approved
-**Input**: User brief + technical research + legacy codebase analysis
-
-## User Scenarios & Testing
-
-### User Story 1 - Single File Upload & Processing (Priority: P1)
-
-As a client platform, I upload a single file (image, video, audio, or generic) to Media Hub and receive a webhook callback when processing is complete, with URLs for all processed variants.
-
-**Why this priority**: This is the fundamental operation. Without single file upload and processing, nothing else works. It validates the entire pipeline: auth, upload, S3 storage, queue dispatch, processing, callback.
-
-**Independent Test**: Upload a video file via `POST /v1/uploads` + `POST /v1/uploads/:id/files`, wait for webhook callback, verify HLS manifests exist in S3 and are playable.
-
-**Acceptance Scenarios**:
-
-1. **Given** a valid API Key, **When** I create an upload and send a 50MB MP4 video, **Then** I receive `upload_id` immediately, file streams to S3, BullMQ job is created, and within 5 minutes I receive a webhook with HLS URLs (master.m3u8 + per-resolution playlists)
-2. **Given** a valid API Key, **When** I upload a 5MB JPEG image, **Then** I receive a webhook with WebP URLs (original, thumb_320, thumb_720)
-3. **Given** a valid API Key, **When** I upload an MP3 audio file, **Then** I receive a webhook with normalized MP3 URL (192k)
-4. **Given** a valid API Key, **When** I upload a PDF (generic type), **Then** the file is stored as-is with a direct URL, no processing applied
-5. **Given** an invalid API Key, **When** I attempt any upload, **Then** I receive 401 Unauthorized
-6. **Given** a valid API Key without `media:upload` scope, **When** I attempt to upload, **Then** I receive 403 Forbidden
+**Status**: Draft
+**Scope**: 3 itens pendentes para integracao programatica com backends clientes
+**Depends on**: Spec original (v1) — sistema ja em producao em media.digital-ai.tech
 
 ---
 
-### User Story 2 - Batch Upload with Parallel Processing (Priority: P1)
+## Context
 
-As a client platform, I create a single upload session and send multiple files in parallel. Each file is processed independently, and I receive a single webhook when ALL files in the batch are complete.
+O Media Hub esta em producao. Upload, processamento (video HLS, imagem WebP, audio MP3), webhook callbacks e autenticacao por API Key funcionam. Porem, tres lacunas impedem integracao self-service por backends clientes:
 
-**Why this priority**: Batch upload is a core differentiator. Clients like Julia Pipeline or Visual Creator need to upload 10-50 files at once. Without this, they'd need to orchestrate individual uploads themselves.
-
-**Independent Test**: Create upload, send 5 files in parallel via concurrent `POST /v1/uploads/:id/files`, verify all 5 process independently, receive ONE webhook when all complete.
-
-**Acceptance Scenarios**:
-
-1. **Given** a valid API Key, **When** I create an upload with `callback_url` and send 5 files (2 videos, 2 images, 1 audio) in parallel, **Then** each file gets its own BullMQ job, processes independently, and I receive one webhook when `files_count` matches completed count
-2. **Given** a batch of 10 files where 1 fails processing, **When** processing completes, **Then** the webhook reports `status: partial`, 9 files have `status: completed`, 1 has `status: failed` with `error_message`, and the other 9 files' URLs are fully usable
-3. **Given** a batch upload in progress, **When** I query `GET /v1/uploads/:id`, **Then** I see real-time status of each file (pending, processing, completed, failed) with progress percentage where available
+1. **Nao existe API admin** — criar tenants requer rodar `scripts/seed-tenant.ts` via CLI no servidor
+2. **CORS do Fastify** esta `*` em producao — funciona mas e inseguro
+3. **S3 CORS nao esta configurado** — players HLS no browser nao conseguem fazer fetch dos segmentos `.ts`/`.m3u8` do CDN
 
 ---
 
-### User Story 3 - Tenant Management & API Key Rotation (Priority: P1)
+## User Story 1 — Gerenciamento de Tenants via Admin API (Priority: P1)
 
-As a platform administrator, I create tenants, generate API keys with specific scopes, and rotate keys without downtime.
+Como operador da Digital AI, eu gerencio tenants e API keys via endpoints REST protegidos por Admin Key, para que a integracao de novos clientes seja programatica e nao dependa de acesso SSH ao servidor.
 
-**Why this priority**: Without tenants and API keys, no client can authenticate. Key rotation is critical for security operations. This is infrastructure for everything else.
+**Why P1**: Sem isso, cada novo cliente requer intervencao manual no servidor. Bloqueia escalabilidade e automacao (ex: n8n workflow de onboarding).
 
-**Independent Test**: Create tenant via admin API, generate 2 API keys, use first key to upload, rotate by revoking first key while second remains active, verify uploads still work with second key.
+**Independent Test**: Usar Admin Key para criar tenant, gerar API key, usar a API key gerada para fazer upload — tudo via curl, sem CLI.
 
-**Acceptance Scenarios**:
+### Acceptance Scenarios
 
-1. **Given** admin credentials, **When** I create a tenant with slug `julia-pipeline`, **Then** the tenant is created, S3 prefix `media-hub/julia-pipeline/` is implicitly ready (S3 doesn't need explicit folder creation), and I can generate API keys
-2. **Given** a tenant with 1 active key, **When** I generate a second key, **Then** both keys work simultaneously. **When** I revoke the first key, **Then** only the second key works, zero downtime
-3. **Given** a tenant with 2 active keys, **When** I try to generate a third, **Then** I receive 409 Conflict with message to revoke one first
-4. **Given** admin credentials, **When** I create an API key with scopes `['media:upload', 'media:read']`, **Then** that key can upload and read but cannot delete files
+1. **Given** a env `ADMIN_KEY` configurada no Swarm, **When** eu envio `POST /v1/admin/tenants` com header `Authorization: Bearer <ADMIN_KEY>` e body `{ "slug": "acme", "name": "Acme Corp" }`, **Then** recebo 201 com `{ tenant_id, slug, name, scopes, created_at }`
+2. **Given** um tenant existente, **When** eu envio `POST /v1/admin/tenants/:tenantId/keys` com header Admin Key e body `{ "label": "backend-prod", "scopes": ["media:upload", "media:read"] }`, **Then** recebo 201 com `{ key_id, key (plaintext, unica vez), prefix, label, scopes, created_at }`
+3. **Given** uma API key ativa, **When** eu envio `DELETE /v1/admin/keys/:keyId` com header Admin Key, **Then** a key e revogada (soft delete via `revoked_at`), retorno 204, e requests usando essa key passam a receber 401
+4. **Given** Admin Key configurada, **When** eu envio `GET /v1/admin/tenants`, **Then** recebo lista de todos os tenants com `{ id, slug, name, scopes, is_active, created_at, keys_count }`
+5. **Given** request sem header Authorization ou com key invalida, **When** eu tento acessar qualquer endpoint `/v1/admin/*`, **Then** recebo 401
+6. **Given** request com API key de tenant (nao Admin Key), **When** eu tento acessar `/v1/admin/*`, **Then** recebo 401 (admin auth e separada)
+7. **Given** body com slug duplicado, **When** eu envio `POST /v1/admin/tenants`, **Then** recebo 409 Conflict
+
+### Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/v1/admin/tenants` | Admin Key | Criar tenant |
+| `GET` | `/v1/admin/tenants` | Admin Key | Listar tenants |
+| `POST` | `/v1/admin/tenants/:tenantId/keys` | Admin Key | Gerar API key para tenant |
+| `DELETE` | `/v1/admin/keys/:keyId` | Admin Key | Revogar API key |
+
+### Request/Response Schemas
+
+**POST /v1/admin/tenants**
+```json
+// Request
+{
+  "slug": "acme-corp",        // required, ^[a-z0-9-]{2,64}$
+  "name": "Acme Corporation", // required, max 256
+  "scopes": ["media:upload", "media:read", "media:delete"] // optional, defaults to ["media:upload", "media:read"]
+}
+
+// Response 201
+{
+  "tenant_id": "uuid",
+  "slug": "acme-corp",
+  "name": "Acme Corporation",
+  "scopes": ["media:upload", "media:read", "media:delete"],
+  "is_active": true,
+  "created_at": "ISO8601"
+}
+```
+
+**POST /v1/admin/tenants/:tenantId/keys**
+```json
+// Request
+{
+  "label": "backend-prod",    // optional, max 128
+  "scopes": ["media:upload", "media:read"] // optional, inherits tenant scopes if omitted
+}
+
+// Response 201
+{
+  "key_id": "uuid",
+  "key": "mh_acme-corp_a1b2c3...", // PLAINTEXT — shown ONCE
+  "prefix": "mh_acme-corp_",
+  "label": "backend-prod",
+  "scopes": ["media:upload", "media:read"],
+  "created_at": "ISO8601"
+}
+```
+
+**GET /v1/admin/tenants**
+```json
+// Response 200
+{
+  "tenants": [
+    {
+      "tenant_id": "uuid",
+      "slug": "acme-corp",
+      "name": "Acme Corporation",
+      "scopes": ["media:upload", "media:read"],
+      "is_active": true,
+      "keys_count": 2,
+      "created_at": "ISO8601"
+    }
+  ]
+}
+```
+
+**DELETE /v1/admin/keys/:keyId**
+```
+Response 204 No Content
+```
 
 ---
 
-### User Story 4 - File Status & Retrieval (Priority: P2)
+## User Story 2 — CORS Configuravel em Producao (Priority: P2)
 
-As a client platform, I query the status of uploads and individual files, and retrieve processed URLs for rendering in my UI.
+Como DevOps da Digital AI, eu configuro origens CORS permitidas via variavel de ambiente no Docker Swarm, para que apenas dominios autorizados possam chamar a API do Media Hub pelo browser.
 
-**Why this priority**: Clients need to poll status when webhooks are not configured or as a fallback. Essential for building UIs but not blocking for backend-to-backend integrations.
+**Why P2**: O sistema funciona com `*` mas e inseguro em producao. A infra de env var ja existe (`ALLOWED_ORIGINS`), falta apenas documentacao e validacao.
 
-**Independent Test**: Upload a file, poll `GET /v1/uploads/:id` until complete, verify all processed URLs are accessible.
+**Independent Test**: Setar `ALLOWED_ORIGINS=https://app.client.com,https://admin.digital-ai.tech`, reiniciar servico, verificar que requests de outras origens recebem CORS block.
 
-**Acceptance Scenarios**:
+### Acceptance Scenarios
 
-1. **Given** an upload with 3 files, **When** I call `GET /v1/uploads/:id`, **Then** I receive the upload object with all 3 files, each with their current status and processed URLs (if complete)
-2. **Given** a completed file, **When** I call `GET /v1/files/:id`, **Then** I receive the file object with `processed_urls` containing all variant URLs (e.g., HLS manifests for video, WebP variants for images)
-3. **Given** a file that is still processing, **When** I call `GET /v1/files/:id`, **Then** I receive `status: processing` with `processing_started_at` timestamp
+1. **Given** `ALLOWED_ORIGINS=https://app.client.com`, **When** request vem com `Origin: https://app.client.com`, **Then** resposta inclui `Access-Control-Allow-Origin: https://app.client.com`
+2. **Given** `ALLOWED_ORIGINS=https://app.client.com`, **When** request vem com `Origin: https://evil.com`, **Then** resposta NAO inclui header CORS (browser bloqueia)
+3. **Given** `ALLOWED_ORIGINS=*` e `NODE_ENV=production`, **When** o servico inicia, **Then** log warning `[WARN] ALLOWED_ORIGINS=* in production` e emitido (ja implementado)
+4. **Given** multiplas origens `ALLOWED_ORIGINS=https://a.com,https://b.com`, **When** requests vem de ambos, **Then** ambos sao aceitos
+5. **Given** `ALLOWED_ORIGINS` nao definido, **Then** default e `*` (retrocompativel)
 
----
+### Implementacao Necessaria
 
-### User Story 5 - File Deletion (Priority: P2)
-
-As a client platform, I delete files I no longer need, freeing S3 storage and removing database records.
-
-**Why this priority**: Storage management is important but not blocking for MVP launch. Tenants need to be able to clean up old files.
-
-**Independent Test**: Upload a file, wait for processing, delete it via `DELETE /v1/files/:id`, verify S3 objects (raw + processed) are removed and database record is soft-deleted.
-
-**Acceptance Scenarios**:
-
-1. **Given** a completed file, **When** I call `DELETE /v1/files/:id` with `media:delete` scope, **Then** raw and processed S3 objects are deleted, database record is removed, and subsequent GET returns 404
-2. **Given** a file belonging to tenant A, **When** tenant B attempts to delete it, **Then** 404 is returned (tenant isolation — don't reveal existence)
-3. **Given** a file that is currently processing, **When** I attempt to delete it, **Then** I receive 409 Conflict with message to wait for processing to complete
+- O codigo em `server.ts` ja trata `ALLOWED_ORIGINS` corretamente (split por `,` ou `true` para `*`)
+- O env.ts ja valida e tem warning de producao
+- **O que falta**: documentacao operacional de como atualizar no Swarm
 
 ---
 
-### User Story 6 - Health Check & Observability (Priority: P2)
+## User Story 3 — S3 CORS para Player HLS no Browser (Priority: P1)
 
-As an operations engineer, I monitor Media Hub's health, verify connectivity to dependencies (S3, Redis, PostgreSQL), and observe processing metrics.
+Como desenvolvedor frontend integrando Media Hub, eu preciso que o bucket S3 (servido via CDN `cdn.digital-ai.tech`) aceite requests CORS do meu dominio, para que players HLS (HLS.js, Video.js) consigam fazer fetch dos segmentos `.ts` e manifestos `.m3u8` diretamente.
 
-**Why this priority**: Operational visibility is important for production but not blocking for initial development and testing.
+**Why P1**: Sem S3 CORS, o video processado pelo Media Hub e inacessivel para qualquer player web. A funcionalidade de video fica incompleta.
 
-**Independent Test**: Call `GET /v1/health/auth` with valid key, verify 200 response with dependency status.
+**Independent Test**: Configurar CORS no bucket, abrir pagina com HLS.js em `https://app.client.com`, apontar para `https://cdn.digital-ai.tech/media-hub/.../master.m3u8`, verificar que o video reproduz sem erros de CORS.
 
-**Acceptance Scenarios**:
+### Acceptance Scenarios
 
-1. **Given** all dependencies are healthy, **When** I call `GET /v1/health/auth`, **Then** I receive 200 with `{ status: "ok", dependencies: { s3: "ok", redis: "ok", postgres: "ok" } }`
-2. **Given** Redis is down, **When** I call `GET /v1/health/auth`, **Then** I receive 503 with `{ status: "degraded", dependencies: { redis: "error" } }`
+1. **Given** CORS configurado no bucket com origem `https://app.client.com`, **When** HLS.js faz `GET` para `https://cdn.digital-ai.tech/.../master.m3u8` com `Origin: https://app.client.com`, **Then** resposta S3 inclui `Access-Control-Allow-Origin: https://app.client.com`
+2. **Given** CORS configurado, **When** browser faz preflight `OPTIONS` para `.ts` segment, **Then** resposta S3 retorna headers CORS com `Access-Control-Allow-Methods: GET, HEAD`
+3. **Given** CORS configurado com multiplas origens, **When** novo cliente e adicionado, **Then** basta re-rodar o script com a nova lista de origens
+4. **Given** CloudFront na frente do S3, **When** CORS e configurado no bucket, **Then** CloudFront precisa forward do header `Origin` e cache por origin (via cache policy)
 
----
+### Implementacao Necessaria
 
-### User Story 7 - Webhook Security (Priority: P3)
-
-As a client platform, I verify that webhook callbacks are authentic and not replayed, using HMAC-SHA256 signatures.
-
-**Why this priority**: Security hardening. The webhook works without signature verification (US1), but production clients need to verify authenticity.
-
-**Independent Test**: Configure upload with `callback_secret`, receive webhook, verify `X-MediaHub-Signature` header matches HMAC-SHA256 of body + timestamp.
-
-**Acceptance Scenarios**:
-
-1. **Given** an upload with `callback_secret`, **When** processing completes and webhook fires, **Then** the callback includes headers `X-MediaHub-Signature` (HMAC-SHA256) and `X-MediaHub-Timestamp` (Unix epoch), and the client can verify authenticity
-2. **Given** a replayed webhook with old timestamp (> 5 minutes), **When** the client checks the timestamp, **Then** it can reject the replay
+- Script shell/TS que recebe lista de origens e aplica CORS config no bucket via AWS CLI
+- Documentacao de como o CloudFront precisa ser configurado para forwarding de CORS headers
+- O script deve ser idempotente (pode re-rodar sem efeitos colaterais)
 
 ---
 
-### User Story 8 - Presigned URL Access (Priority: P3)
+## Edge Cases
 
-As a client platform, I request time-limited presigned URLs for S3 objects, enabling secure direct access without exposing S3 credentials.
-
-**Why this priority**: Future enhancement. Initial implementation can return S3 keys that clients resolve via their own CloudFront distribution or via a future presign endpoint.
-
-**Independent Test**: Upload and process a file, request presigned URL via API, verify URL is accessible for the TTL duration and expires after.
-
-**Acceptance Scenarios**:
-
-1. **Given** a completed file, **When** I call `GET /v1/files/:id/url?ttl=3600`, **Then** I receive a presigned S3 URL valid for 1 hour
-2. **Given** a presigned URL that has expired, **When** I access it, **Then** I receive 403 from S3
+- **Admin Key rotacao**: Se a env `ADMIN_KEY` mudar, basta `docker service update --env-add`. Nao afeta API keys de tenants
+- **Admin Key vazia**: Se `ADMIN_KEY` nao estiver definida, endpoints admin retornam 503 com mensagem clara
+- **S3 CORS com CloudFront**: CloudFront pode cachear respostas sem CORS headers. Precisa configurar `Origin` como cache key via cache policy ou origin request policy
+- **Slug collision**: Tentar criar tenant com slug existente retorna 409, nao erro generico 500
 
 ---
-
-### Edge Cases
-
-- What happens when a 10GB video is uploaded? Stream-first architecture handles it, but processing time may exceed 30 minutes — webhook timeout must be configurable on client side
-- What happens when S3 is unreachable during upload? Return 502 Bad Gateway with retry-after header
-- What happens when FFmpeg crashes mid-processing? BullMQ retries up to 3 times with exponential backoff; after 3 failures, file status becomes `failed` with error message
-- What happens when the same file is uploaded twice? Each upload gets a unique ID; no deduplication. Dedup is the client's responsibility
-- What happens when a tenant is deactivated mid-upload? In-flight uploads complete, but new requests return 403
-- What happens when Redis crashes? API can still accept uploads to S3 (graceful degradation), but processing queue stalls until Redis recovers. Health check reports degraded
-- What if callback_url is unreachable? Retry webhook 3 times with exponential backoff (1s, 10s, 60s). After 3 failures, log and move on. Client can poll status endpoint as fallback
 
 ## Requirements
 
 ### Functional Requirements
 
-- **FR-001**: System MUST authenticate all requests via API Key in `Authorization: Bearer mh_*` header
-- **FR-002**: System MUST stream file uploads directly to S3 without buffering entire file in memory
-- **FR-003**: System MUST detect media type (video, image, audio, generic) from MIME type and apply appropriate processing pipeline
-- **FR-004**: System MUST generate HLS adaptive bitrate streams for video files (360p, 720p, 1080p, 4K based on source resolution)
-- **FR-005**: System MUST convert images to WebP format and generate thumbnails at 320px and 720px widths
-- **FR-006**: System MUST normalize audio to MP3 192kbps
-- **FR-007**: System MUST store generic files without processing and provide direct S3 URL
-- **FR-008**: System MUST send webhook POST to `callback_url` when all files in an upload are processed (or failed)
-- **FR-009**: System MUST support batch uploads with parallel processing of individual files
-- **FR-010**: System MUST enforce tenant isolation at every layer (API, DB queries, S3 paths)
-- **FR-011**: System MUST support 2 active API keys per tenant for zero-downtime rotation
-- **FR-012**: System MUST store API keys as SHA-256 hashes; raw key shown only at creation
-- **FR-013**: System MUST provide admin endpoints for tenant CRUD and API key management
-- **FR-014**: System MUST track file processing status (pending, processing, completed, failed)
-- **FR-015**: System MUST retry failed processing jobs up to 3 times with exponential backoff
+- **FR-A01**: System MUST authenticate admin endpoints via `ADMIN_KEY` env var, separado do sistema de API keys de tenant
+- **FR-A02**: System MUST provide `POST /v1/admin/tenants` endpoint para criar tenants com slug, name e scopes
+- **FR-A03**: System MUST provide `POST /v1/admin/tenants/:tenantId/keys` para gerar API keys com label e scopes opcionais
+- **FR-A04**: System MUST provide `DELETE /v1/admin/keys/:keyId` para revogar API keys (soft delete via `revoked_at`)
+- **FR-A05**: System MUST provide `GET /v1/admin/tenants` para listar todos os tenants com contagem de keys ativas
+- **FR-A06**: System MUST validate slug format (`^[a-z0-9-]{2,64}$`) e retornar 422 se invalido
+- **FR-A07**: System MUST retornar 409 Conflict se slug ja existe
+- **FR-A08**: System MUST retornar API key em plaintext APENAS na resposta de criacao — nunca mais
+- **FR-A09**: System MUST NOT reuse o middleware `requireAuth` de tenants para admin — auth admin e separada
+- **FR-C01**: System MUST log warning quando `ALLOWED_ORIGINS=*` em `NODE_ENV=production` (ja implementado)
+- **FR-S01**: Bucket S3 MUST ter CORS configurado para aceitar GET/HEAD de origens especificas
+- **FR-S02**: Script de CORS MUST ser idempotente e aceitar lista de origens como parametro
 
-### Key Entities
+### Non-Functional Requirements
 
-- **Tenant**: Organization/platform that uses Media Hub. Has slug, name, scopes, active flag. Each tenant gets isolated S3 prefix and API keys
-- **API Key**: Authentication credential for a tenant. Stored as SHA-256 hash. Has scopes, expiration, revocation timestamp. Max 2 active per tenant
-- **Upload**: A batch session. Contains 1+ files, optional callback URL/secret, external reference for client correlation, metadata JSONB
-- **File**: Individual media item within an upload. Tracks original name, MIME type, size, media type classification, S3 keys (raw + processed), processing status, processed URLs JSONB, error message
+- **NFR-A01**: Admin endpoints MUST responder em < 100ms (p95)
+- **NFR-A02**: Admin Key MUST ser comparada em constant-time para prevenir timing attacks
+- **NFR-S01**: S3 CORS config MUST suportar ate 100 origens (limite AWS)
+
+---
 
 ## Success Criteria
 
-### Measurable Outcomes
-
-- **SC-001**: Single file upload (< 100MB) completes S3 storage in under 5 seconds on standard connection
-- **SC-002**: Video processing (1080p, 2 minutes) generates all HLS variants in under 3 minutes
-- **SC-003**: Image processing (10MP JPEG) generates WebP + thumbnails in under 2 seconds
-- **SC-004**: API responds to authenticated requests in under 50ms (p95) for non-upload endpoints
-- **SC-005**: System handles 50 concurrent uploads without degradation
-- **SC-006**: Zero cross-tenant data leaks in penetration testing
-- **SC-007**: Worker container recovers automatically after crash, reprocessing any interrupted jobs
-- **SC-008**: Webhook delivery succeeds on first attempt for 99% of callbacks (when endpoint is healthy)
+- **SC-A01**: Criar tenant + gerar key + usar key para upload — tudo via HTTP, sem CLI
+- **SC-A02**: Revogar key e verificar que requests com ela retornam 401
+- **SC-C01**: CORS block efetivo para origens nao autorizadas
+- **SC-S01**: Player HLS.js reproduz video do CDN sem erros CORS em qualquer dominio autorizado

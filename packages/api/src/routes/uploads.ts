@@ -13,6 +13,16 @@ let processingQueue: Queue | null = null;
 function getQueue(redis: Redis): Queue {
   if (!processingQueue) {
     processingQueue = new Queue('media-processing', { connection: redis });
+    processingQueue.on('error', (err) => {
+      // Log Redis connection errors so they surface in observability tools
+      // instead of being silently swallowed. The Queue will auto-reconnect
+      // via ioredis built-in retry logic.
+      console.error({ err }, 'Processing queue connection error');
+      // Reset singleton so it is recreated on next request if fatally closed
+      if ((err as NodeJS.ErrnoException).code === 'ECONNREFUSED') {
+        processingQueue = null;
+      }
+    });
   }
   return processingQueue;
 }

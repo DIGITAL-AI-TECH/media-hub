@@ -35,7 +35,11 @@ export async function fileRoutes(fastify: FastifyInstance) {
     }
 
     // Delete from S3 (fire and forget errors — storage cleanup is best-effort)
-    if (file.s3_key_raw) deleteFromS3(file.s3_key_raw).catch(() => {});
+    if (file.s3_key_raw) {
+      deleteFromS3(file.s3_key_raw).catch((err) => {
+        fastify.log.warn({ err, fileId: request.params.fileId }, 'S3 delete failed — storage orphan');
+      });
+    }
 
     await deleteFile(fastify.db, request.params.fileId, request.tenant.id);
     return reply.status(204).send();

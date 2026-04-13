@@ -22,7 +22,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
   request.tenant = {
     id: keyData.tenant_id,
     slug: keyData.tenant_slug,
-    scopes: keyData.scopes || keyData.tenant_scopes,
+    scopes: keyData.scopes ?? keyData.tenant_scopes,
   };
 }
 

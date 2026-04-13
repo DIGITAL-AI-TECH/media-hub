@@ -130,7 +130,8 @@ export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
       const variantFiles = await fs.readdir(variantDir);
       for (const fname of variantFiles) {
         const localPath = path.join(variantDir, fname);
-        const s3Key = `${s3BaseKey}/${res.label}/${fname}`;
+        const safeFname = path.basename(fname);
+        const s3Key = `${s3BaseKey}/${res.label}/${safeFname}`;
         const ct = fname.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t';
         await uploadFileToS3(localPath, s3Key, ct);
       }
