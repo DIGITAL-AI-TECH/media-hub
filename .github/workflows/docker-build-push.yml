@@ -135,6 +135,7 @@ jobs:
       S3_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_HUB_S3_SECRET_ACCESS_KEY }}
       CDN_BASE_URL: ${{ secrets.MEDIA_HUB_CDN_BASE_URL }}
       ALLOWED_ORIGINS: ${{ secrets.MEDIA_HUB_ALLOWED_ORIGINS }}
+      ADMIN_KEY: ${{ secrets.MEDIA_HUB_ADMIN_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v3

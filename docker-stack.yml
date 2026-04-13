@@ -17,6 +17,7 @@ services:
       CDN_BASE_URL: ${CDN_BASE_URL}
       API_PORT: "3000"
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      ADMIN_KEY: ${ADMIN_KEY}
       LOG_LEVEL: info
     deploy:
       replicas: 2
