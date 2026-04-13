@@ -1,0 +1,17 @@
+name = "media-hub-cdn"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+# Variáveis públicas (não sensíveis)
+[vars]
+S3_BUCKET_DOMAIN = "cdn.digital-ai.tech.s3.amazonaws.com"
+
+# Secrets — configurar via CLI:
+#   wrangler secret put MH_TOKEN_SECRET   (mesmo valor que na API)
+#   wrangler secret put CF_S3_SECRET      (valor do Referer na bucket policy S3)
+#
+# Após configurar: wrangler deploy
+
+[[routes]]
+pattern = "cdn.digital-ai.tech/media-hub/*"
+zone_name = "digital-ai.tech"

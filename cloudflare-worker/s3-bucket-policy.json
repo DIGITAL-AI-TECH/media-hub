@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyMediaHubWithoutRefererSecret",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::cdn.digital-ai.tech/media-hub/*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:Referer": "SUBSTITUIR_PELO_CF_S3_SECRET"
+        }
+      }
+    },
+    {
+      "Sid": "PublicReadOtherPrefixes",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::cdn.digital-ai.tech/uploads/*"
+    },
+    {
+      "Sid": "AllowTranscriptionBotWriteMediaHub",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::110013536163:user/transcription-service-bot"
+      },
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::cdn.digital-ai.tech/media-hub/*"
+    }
+  ]
+}
