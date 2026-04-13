@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Media Hub API — Documentação</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
+  <style>
+    /* ── Brand ─────────────────────────────────────────────── */
+    :root {
+      --brand-primary: #6C3FE8;
+      --brand-dark: #1A0E3B;
+      --brand-light: #F4F0FF;
+      --brand-accent: #A67FFF;
+      --text-main: #1A1A2E;
+      --text-muted: #6B7280;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #FAFAFA;
+      color: var(--text-main);
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .dai-header {
+      background: var(--brand-dark);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      box-shadow: 0 2px 12px rgba(108,63,232,0.3);
+    }
+
+    .dai-logo {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 18px;
+      color: white;
+      letter-spacing: -1px;
+      flex-shrink: 0;
+    }
+
+    .dai-header-text h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      color: white;
+    }
+
+    .dai-header-text p {
+      margin: 2px 0 0;
+      font-size: 13px;
+      color: var(--brand-accent);
+    }
+
+    .dai-badge {
+      margin-left: auto;
+      background: rgba(108,63,232,0.4);
+      border: 1px solid var(--brand-accent);
+      color: var(--brand-accent);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ── Info bar ───────────────────────────────────────────── */
+    .dai-info-bar {
+      background: var(--brand-light);
+      border-bottom: 1px solid #E5D9FF;
+      padding: 12px 32px;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .dai-info-bar span {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .dai-info-bar strong {
+      color: var(--brand-primary);
+    }
+
+    .dai-info-bar a {
+      color: var(--brand-primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .dai-info-bar a:hover { text-decoration: underline; }
+
+    /* ── Auth helper ────────────────────────────────────────── */
+    .dai-auth-help {
+      background: white;
+      border: 1px solid #E5D9FF;
+      border-left: 4px solid var(--brand-primary);
+      margin: 20px 32px;
+      padding: 16px 20px;
+      border-radius: 8px;
+    }
+
+    .dai-auth-help h3 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--brand-primary);
+    }
+
+    .dai-auth-help p {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .dai-auth-help code {
+      background: var(--brand-light);
+      border: 1px solid #D1C4FF;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 12px;
+      color: var(--brand-dark);
+      font-family: 'SF Mono', Consolas, monospace;
+    }
+
+    .dai-auth-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .dai-step {
+      background: var(--brand-light);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .dai-step-num {
+      width: 24px;
+      height: 24px;
+      background: var(--brand-primary);
+      color: white;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .dai-step p {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--text-main);
+    }
+
+    /* ── Swagger UI overrides ───────────────────────────────── */
+    .swagger-ui .topbar { display: none !important; }
+
+    .swagger-ui .info { margin: 0 !important; padding: 20px 32px !important; }
+    .swagger-ui .info .title { color: var(--brand-dark) !important; font-size: 24px !important; }
+    .swagger-ui .info .description { max-width: 900px; }
+
+    .swagger-ui .scheme-container {
+      background: white !important;
+      padding: 16px 32px !important;
+      border-top: 1px solid #E5E7EB;
+      border-bottom: 1px solid #E5E7EB;
+      box-shadow: none !important;
+    }
+
+    .swagger-ui .opblock-tag {
+      font-size: 16px !important;
+      font-weight: 700 !important;
+      color: var(--brand-dark) !important;
+      border-bottom: 2px solid var(--brand-light) !important;
+    }
+
+    .swagger-ui .opblock.opblock-get .opblock-summary-method {
+      background: #059669 !important;
+    }
+    .swagger-ui .opblock.opblock-post .opblock-summary-method {
+      background: var(--brand-primary) !important;
+    }
+    .swagger-ui .opblock.opblock-delete .opblock-summary-method {
+      background: #DC2626 !important;
+    }
+
+    .swagger-ui .opblock.opblock-get { border-color: #059669 !important; }
+    .swagger-ui .opblock.opblock-post { border-color: var(--brand-primary) !important; }
+    .swagger-ui .opblock.opblock-delete { border-color: #DC2626 !important; }
+
+    .swagger-ui .btn.authorize {
+      background: var(--brand-primary) !important;
+      border-color: var(--brand-primary) !important;
+      color: white !important;
+      border-radius: 6px !important;
+      font-weight: 600 !important;
+    }
+
+    .swagger-ui .btn.authorize:hover {
+      background: var(--brand-dark) !important;
+    }
+
+    .swagger-ui .btn.execute {
+      background: var(--brand-primary) !important;
+      border-color: var(--brand-primary) !important;
+    }
+
+    .swagger-ui section.models { margin: 20px 32px !important; }
+
+    /* ── Wrapper ────────────────────────────────────────────── */
+    #swagger-ui { max-width: 1200px; margin: 0 auto; }
+    .swagger-wrapper { padding: 0 0 60px; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="dai-header">
+  <div class="dai-logo">DA</div>
+  <div class="dai-header-text">
+    <h1>Media Hub API</h1>
+    <p>digital-ai.tech — Processamento e streaming de mídia multi-tenant</p>
+  </div>
+  <div class="dai-badge">v1.0.0 · Produção</div>
+</div>
+
+<!-- Info bar -->
+<div class="dai-info-bar">
+  <span>Base URL: <strong>https://media.digital-ai.tech</strong></span>
+  <span>|</span>
+  <span>Health: <a href="https://media.digital-ai.tech/v1/health" target="_blank">GET /v1/health</a></span>
+  <span>|</span>
+  <span>Suporte: <a href="mailto:contato@digital-ai.tech">contato@digital-ai.tech</a></span>
+</div>
+
+<!-- Auth Guide -->
+<div class="dai-auth-help">
+  <h3>Como autenticar</h3>
+  <p>
+    Todos os endpoints (exceto <code>GET /v1/health</code>) exigem autenticação via header:
+    <code>Authorization: Bearer &lt;sua-api-key&gt;</code>
+  </p>
+  <p>As API Keys têm o formato <code>mh_tenant-slug_&lt;hex64&gt;</code> e são geradas pelo administrador.</p>
+
+  <div class="dai-auth-steps">
+    <div class="dai-step">
+      <div class="dai-step-num">1</div>
+      <p><strong>Receba sua API Key</strong> do administrador do Media Hub</p>
+    </div>
+    <div class="dai-step">
+      <div class="dai-step-num">2</div>
+      <p>Clique em <strong>Authorize 🔒</strong> abaixo e cole a key no campo <em>ApiKey</em></p>
+    </div>
+    <div class="dai-step">
+      <div class="dai-step-num">3</div>
+      <p>Teste com <code>GET /v1/health/auth</code> para confirmar que está funcionando</p>
+    </div>
+    <div class="dai-step">
+      <div class="dai-step-num">4</div>
+      <p>Crie um upload e envie seus arquivos de mídia</p>
+    </div>
+  </div>
+</div>
+
+<!-- Swagger UI -->
+<div class="swagger-wrapper">
+  <div id="swagger-ui"></div>
+</div>
+
+<script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+<script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-standalone-preset.js"></script>
+<script>
+  const OPENAPI_SPEC = `openapi: "3.0.3"
+info:
+  title: Media Hub API
+  version: "1.0.0"
+  description: |
+    ## Visão Geral
+
+    O **Media Hub** é um serviço de processamento e armazenamento de mídia multi-tenant.
+    Ele aceita qualquer tipo de arquivo (vídeo, imagem, áudio, genérico), processa em background
+    e disponibiliza os resultados via CDN com streaming HLS adaptativo para vídeos.
+
+    ### Fluxo de Uso
+
+    \`\`\`
+    1. POST /v1/uploads              → Cria sessão de upload
+    2. POST /v1/uploads/:id/files    → Envia arquivo(s) — processamento começa
+    3. GET  /v1/uploads/:id          → Polling de status (a cada 2-5s)
+    4. GET  /v1/files/:fileId        → Obtém URLs processadas (quando done)
+    \`\`\`
+
+    ### Processamento de Vídeo (HLS Adaptativo — YouTube-style)
+
+    | Qualidade | Resolução  | Bitrate |
+    |-----------|-----------|---------|
+    | 360p      | 640×360   | 800k    |
+    | 720p      | 1280×720  | 2500k   |
+    | 1080p     | 1920×1080 | 5000k   |
+    | 4K        | 3840×2160 | 15000k  |
+
+    As qualidades são geradas apenas se o arquivo original tiver resolução suficiente (sem upscale).
+    Use \`processed_urls.hls_master\` em players como HLS.js ou Video.js.
+
+    ### Tipos de Mídia e Outputs
+
+    | Tipo      | Outputs                                          |
+    |-----------|--------------------------------------------------|
+    | \`video\` | hls_master, hls_360p..4k, thumb (JPEG)          |
+    | \`image\` | original, thumb_320, thumb_720                  |
+    | \`audio\` | mp3 (192kbps normalizado)                       |
+    | \`generic\`| url (passthrough CDN)                          |
+
+    ### Autenticação
+
+    - **API Key** — endpoints de upload/consulta: \`Authorization: Bearer mh_tenant_...\`
+    - **Admin Key** — gestão de tenants/keys: \`Authorization: Bearer <ADMIN_KEY>\`
+
+    ### Webhooks
+
+    Forneça \`callback_url\` ao criar o upload. Ao processar cada arquivo, o servidor faz POST:
+
+    \`\`\`json
+    {
+      "event": "file.processed",
+      "upload_id": "uuid",
+      "file_id": "uuid",
+      "status": "done",
+      "processed_urls": { "hls_master": "https://..." }
+    }
+    \`\`\`
+
+    Inclui \`X-Media-Hub-Signature: sha256=<hmac>\` se \`callback_secret\` foi fornecido.
+    Retry automático: 3 tentativas (1s → 10s → 60s).
+
+  contact:
+    name: Digital AI
+    url: https://digital-ai.tech
+  license:
+    name: Proprietário — Digital AI
+
+servers:
+  - url: https://media.digital-ai.tech
+    description: Produção
+
+tags:
+  - name: Health
+    description: Verificação de status do serviço
+  - name: Uploads
+    description: Criação e gerenciamento de sessões de upload
+  - name: Files
+    description: Consulta e exclusão de arquivos processados
+  - name: Admin — Tenants
+    description: Gerenciamento de tenants (requer ADMIN_KEY)
+  - name: Admin — API Keys
+    description: Geração e revogação de API Keys (requer ADMIN_KEY)
+
+components:
+  securitySchemes:
+    ApiKey:
+      type: http
+      scheme: bearer
+      description: "API Key do tenant. Formato: mh_<slug>_<hex64>. Gerada via Admin API."
+    AdminKey:
+      type: http
+      scheme: bearer
+      description: "Chave de administração (env ADMIN_KEY). Não é API Key de tenant."
+
+  schemas:
+    MediaType:
+      type: string
+      enum: [image, video, audio, generic]
+    FileStatus:
+      type: string
+      enum: [pending, queued, processing, done, failed]
+    UploadStatus:
+      type: string
+      enum: [pending, processing, done, partial, failed]
+
+    ProcessedUrls:
+      type: object
+      properties:
+        hls_master: { type: string, format: uri }
+        hls_360p:   { type: string, format: uri }
+        hls_720p:   { type: string, format: uri }
+        hls_1080p:  { type: string, format: uri }
+        hls_4k:     { type: string, format: uri }
+        thumb:      { type: string, format: uri }
+        original:   { type: string, format: uri }
+        thumb_320:  { type: string, format: uri }
+        thumb_720:  { type: string, format: uri }
+        mp3:        { type: string, format: uri }
+        url:        { type: string, format: uri }
+
+    File:
+      type: object
+      properties:
+        file_id:              { type: string, format: uuid }
+        upload_id:            { type: string, format: uuid }
+        original_name:        { type: string }
+        media_type:           { $ref: '#/components/schemas/MediaType' }
+        mime_type:            { type: string }
+        size_bytes:           { type: integer, nullable: true }
+        status:               { $ref: '#/components/schemas/FileStatus' }
+        processed_urls:       { $ref: '#/components/schemas/ProcessedUrls', nullable: true }
+        error_message:        { type: string, nullable: true }
+        processing_started_at:{ type: string, format: date-time, nullable: true }
+        processing_done_at:   { type: string, format: date-time, nullable: true }
+        created_at:           { type: string, format: date-time }
+
+    Upload:
+      type: object
+      properties:
+        upload_id:    { type: string, format: uuid }
+        status:       { $ref: '#/components/schemas/UploadStatus' }
+        files_count:  { type: integer }
+        external_ref: { type: string, nullable: true }
+        metadata:     { type: object, additionalProperties: true, nullable: true }
+        created_at:   { type: string, format: date-time }
+        updated_at:   { type: string, format: date-time }
+        files:
+          type: array
+          items: { $ref: '#/components/schemas/File' }
+
+    Tenant:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        slug:        { type: string, example: "meu-cliente" }
+        name:        { type: string, example: "Meu Cliente Ltda" }
+        scopes:      { type: array, items: { type: string }, nullable: true }
+        is_active:   { type: boolean }
+        active_keys: { type: string, example: "1" }
+        created_at:  { type: string, format: date-time }
+        updated_at:  { type: string, format: date-time }
+
+    ApiKeyPublic:
+      type: object
+      properties:
+        id:           { type: string, format: uuid }
+        tenant_id:    { type: string, format: uuid }
+        key_prefix:   { type: string, example: "mh_meu-cliente_" }
+        label:        { type: string, nullable: true }
+        scopes:       { type: array, items: { type: string }, nullable: true }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        expires_at:   { type: string, format: date-time, nullable: true }
+        revoked_at:   { type: string, format: date-time, nullable: true }
+        created_at:   { type: string, format: date-time }
+        status:       { type: string, enum: [active, revoked, expired] }
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:   { type: string, example: "NOT_FOUND" }
+        message: { type: string, example: "File not found" }
+        errors:  { type: object, additionalProperties: { type: array, items: { type: string } } }
+
+paths:
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Health check público
+      operationId: getHealth
+      responses:
+        "200":
+          description: Serviço operacional
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:        { type: boolean, example: true }
+                  timestamp: { type: string, format: date-time }
+
+  /v1/health/auth:
+    get:
+      tags: [Health]
+      summary: Health check autenticado
+      description: Valida a API Key e retorna o tenant. Use para testar credenciais.
+      operationId: getHealthAuth
+      security: [{ ApiKey: [] }]
+      responses:
+        "200":
+          description: API Key válida
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:     { type: boolean }
+                  tenant: { type: string, example: "meu-cliente" }
+                  scopes: { type: array, items: { type: string } }
+        "401":
+          description: API Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/uploads:
+    post:
+      tags: [Uploads]
+      summary: Criar sessão de upload
+      description: |
+        Cria uma sessão de upload. Uma sessão pode conter múltiplos arquivos.
+        Se fornecer \`callback_url\`, o servidor notificará via POST quando cada arquivo for processado.
+      operationId: createUpload
+      security: [{ ApiKey: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                external_ref:
+                  type: string
+                  maxLength: 256
+                  description: ID do seu sistema (campanha, post, etc.) — retornado nas consultas
+                  example: "campanha-verao-2026"
+                callback_url:
+                  type: string
+                  format: uri
+                  description: URL para webhook quando processamento finalizar
+                  example: "https://seu-backend.com/webhooks/media-hub"
+                callback_secret:
+                  type: string
+                  maxLength: 128
+                  description: Secret para validação HMAC do webhook (header X-Media-Hub-Signature)
+                metadata:
+                  type: object
+                  additionalProperties: true
+                  description: Metadados arbitrários
+                  example: { client_id: "12345", campaign: "verao-2026" }
+      responses:
+        "201":
+          description: Sessão criada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upload_id:  { type: string, format: uuid }
+                  status:     { $ref: '#/components/schemas/UploadStatus' }
+                  created_at: { type: string, format: date-time }
+        "401":
+          description: API Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "422":
+          description: Parâmetros inválidos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/uploads/{uploadId}/files:
+    post:
+      tags: [Uploads]
+      summary: Enviar arquivo para processamento
+      description: |
+        Envia um arquivo via multipart/form-data. O arquivo é transmitido diretamente
+        para o storage sem buffer em memória. Suporta qualquer tamanho (4K, vídeos longos).
+
+        O processamento é assíncrono — use GET /v1/uploads/:id para acompanhar.
+      operationId: uploadFile
+      security: [{ ApiKey: [] }]
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Arquivo de mídia
+      responses:
+        "202":
+          description: Arquivo aceito e enfileirado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_id:       { type: string, format: uuid }
+                  upload_id:     { type: string, format: uuid }
+                  original_name: { type: string }
+                  media_type:    { $ref: '#/components/schemas/MediaType' }
+                  status:        { type: string, example: "queued" }
+        "400":
+          description: Nenhum arquivo enviado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401":
+          description: API Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404":
+          description: Upload não encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/uploads/{uploadId}:
+    get:
+      tags: [Uploads]
+      summary: Consultar status do upload
+      description: |
+        Retorna status da sessão e de todos os arquivos. Faça polling a cada 2-5s
+        enquanto algum arquivo tiver status diferente de \`done\` ou \`failed\`.
+      operationId: getUpload
+      security: [{ ApiKey: [] }]
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Status do upload com arquivos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Upload' }
+        "401":
+          description: API Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404":
+          description: Upload não encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/files/{fileId}:
+    get:
+      tags: [Files]
+      summary: Obter metadata de um arquivo
+      description: |
+        Retorna metadata e URLs processadas. Quando \`status = done\`,
+        use \`processed_urls.hls_master\` para players de vídeo HLS.
+      operationId: getFile
+      security: [{ ApiKey: [] }]
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Metadata do arquivo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/File' }
+        "401":
+          description: API Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404":
+          description: Arquivo não encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+    delete:
+      tags: [Files]
+      summary: Deletar arquivo
+      description: Remove do banco e tenta excluir do S3 (best-effort). Requer scope \`media:delete\`.
+      operationId: deleteFile
+      security: [{ ApiKey: [] }]
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Arquivo deletado
+        "401":
+          description: API Key inválida ou sem scope media:delete
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404":
+          description: Arquivo não encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/admin/tenants:
+    get:
+      tags: [Admin — Tenants]
+      summary: Listar todos os tenants
+      operationId: listTenants
+      security: [{ AdminKey: [] }]
+      responses:
+        "200":
+          description: Lista de tenants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenants:
+                    type: array
+                    items: { $ref: '#/components/schemas/Tenant' }
+        "401":
+          description: Admin Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503":
+          description: ADMIN_KEY não configurada no servidor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+    post:
+      tags: [Admin — Tenants]
+      summary: Criar tenant
+      operationId: createTenant
+      security: [{ AdminKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, name]
+              properties:
+                slug:
+                  type: string
+                  pattern: '^[a-z0-9-]{2,64}$'
+                  description: Identificador único (letras minúsculas, números, hífens)
+                  example: "cliente-xyz"
+                name:
+                  type: string
+                  example: "Cliente XYZ Ltda"
+                scopes:
+                  type: array
+                  items: { type: string, enum: [media:upload, media:read, media:delete] }
+                  example: ["media:upload", "media:read"]
+      responses:
+        "201":
+          description: Tenant criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        "401":
+          description: Admin Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "409":
+          description: Slug já existe
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "422":
+          description: Campos inválidos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/admin/tenants/{tenantId}/keys:
+    get:
+      tags: [Admin — API Keys]
+      summary: Listar API Keys do tenant
+      operationId: listApiKeys
+      security: [{ AdminKey: [] }]
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Lista de API Keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant_id: { type: string, format: uuid }
+                  keys:
+                    type: array
+                    items: { $ref: '#/components/schemas/ApiKeyPublic' }
+        "401":
+          description: Admin Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404":
+          description: Tenant não encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "422":
+          description: tenantId não é UUID válido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+    post:
+      tags: [Admin — API Keys]
+      summary: Gerar API Key para tenant
+      description: |
+        O valor completo da key é retornado **apenas uma vez** — salve imediatamente.
+        Formato: \`mh_<tenant-slug>_<64-hex-chars>\`
+      operationId: createApiKey
+      security: [{ AdminKey: [] }]
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  maxLength: 128
+                  example: "producao-backend"
+                scopes:
+                  type: array
+                  items: { type: string, enum: [media:upload, media:read, media:delete] }
+      responses:
+        "201":
+          description: API Key gerada — salve o campo \`key\` agora
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key_id:     { type: string, format: uuid }
+                  key:        { type: string, description: "Valor completo — mostrado apenas uma vez" }
+                  prefix:     { type: string, example: "mh_cliente-xyz_" }
+                  label:      { type: string, nullable: true }
+                  scopes:     { type: array, items: { type: string }, nullable: true }
+                  created_at: { type: string, format: date-time }
+        "401":
+          description: Admin Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404":
+          description: Tenant não encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/admin/keys/{keyId}:
+    delete:
+      tags: [Admin — API Keys]
+      summary: Revogar API Key
+      description: Revoga imediatamente. Requests com a key revogada recebem 401.
+      operationId: revokeApiKey
+      security: [{ AdminKey: [] }]
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Key revogada
+        "401":
+          description: Admin Key inválida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404":
+          description: Key não encontrada ou já revogada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "422":
+          description: keyId não é UUID válido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+`;
+
+  window.onload = () => {
+    const ui = SwaggerUIBundle({
+      spec: jsyaml.load(OPENAPI_SPEC),
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      presets: [
+        SwaggerUIBundle.presets.apis,
+        SwaggerUIStandalonePreset,
+      ],
+      plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+      layout: 'StandaloneLayout',
+      defaultModelsExpandDepth: 1,
+      defaultModelExpandDepth: 2,
+      displayRequestDuration: true,
+      tryItOutEnabled: true,
+      requestSnippetsEnabled: true,
+      persistAuthorization: true,
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+    });
+    window.ui = ui;
+  };
+</script>
+<script src="https://unpkg.com/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+</body>
+</html>
