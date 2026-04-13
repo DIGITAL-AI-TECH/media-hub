@@ -35,7 +35,7 @@ function setMediaHubCookie(reply: FastifyReply, tokenValue: string): void {
   );
 }
 
-function hasMediaHubUrls(processed_urls: Record<string, unknown> | null): boolean {
+function hasMediaHubUrls(processed_urls: object | null): boolean {
   if (!processed_urls) return false;
   return Object.values(processed_urls).some(
     (url) => typeof url === 'string' && url.includes('/media-hub/')
