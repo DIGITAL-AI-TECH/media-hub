@@ -1,5 +1,5 @@
 FROM node:20-alpine AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 
 FROM base AS deps
@@ -26,5 +26,7 @@ COPY --from=build /app/packages/api/package.json ./packages/api/
 COPY --from=build /app/shared/package.json ./shared/
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml .npmrc ./
 RUN pnpm install --prod --frozen-lockfile
+RUN addgroup -S app && adduser -S app -G app
+USER app
 EXPOSE 3000
 CMD ["node", "packages/api/dist/server.js"]

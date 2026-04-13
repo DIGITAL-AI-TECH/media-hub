@@ -16,9 +16,15 @@ services:
       S3_PREFIX: media-hub
       CDN_BASE_URL: ${CDN_BASE_URL}
       API_PORT: "3000"
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       ADMIN_KEY: ${ADMIN_KEY}
       LOG_LEVEL: info
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     deploy:
       replicas: 2
       restart_policy:
@@ -27,6 +33,13 @@ services:
         parallelism: 1
         delay: 10s
         order: start-first
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.media-hub.rule=Host(`media.digital-ai.tech`)"
@@ -35,6 +48,9 @@ services:
         - "traefik.http.routers.media-hub.service=media-hub"
         - "traefik.http.services.media-hub.loadbalancer.server.port=3000"
         - "traefik.docker.network=oraculusnet_v2"
+        - "traefik.http.routers.media-hub-http.rule=Host(`media.digital-ai.tech`)"
+        - "traefik.http.routers.media-hub-http.entrypoints=web"
+        - "traefik.http.routers.media-hub-http.middlewares=redirect-to-https@file"
 
   worker:
     image: registry.digital-ai.tech/digital-ai/media-hub-worker:${VERSION:-latest}
@@ -60,17 +76,38 @@ services:
         parallelism: 1
         delay: 15s
         order: stop-first
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
+  # TODO WARN-06: adicionar requirepass ao Redis + atualizar REDIS_URL
+  # Refs: https://redis.io/docs/management/security/
   redis:
     image: redis:7-alpine
     networks:
       - oraculusnet_v2
     volumes:
       - media_hub_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
 networks:
   oraculusnet_v2:
