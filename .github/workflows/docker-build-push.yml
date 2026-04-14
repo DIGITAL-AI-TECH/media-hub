@@ -136,7 +136,6 @@ jobs:
       CDN_BASE_URL: ${{ secrets.MEDIA_HUB_CDN_BASE_URL }}
       ALLOWED_ORIGINS: ${{ secrets.MEDIA_HUB_ALLOWED_ORIGINS }}
       ADMIN_KEY: ${{ secrets.MEDIA_HUB_ADMIN_KEY }}
-      REDIS_URL: ${{ secrets.MEDIA_HUB_REDIS_URL }}
       MH_TOKEN_SECRET: ${{ secrets.MEDIA_HUB_MH_TOKEN_SECRET }}
     steps:
       - uses: actions/checkout@v4
