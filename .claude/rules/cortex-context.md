@@ -496,6 +496,7 @@ tags: [agents, registry, multi-agent, delegation]
 | carousel-dev | digital-ai | playwright-export, png-generation, cortex-upload, pipeline-execution | carousel.html pronto para exportar slides PNG | haiku | Read, Write, Bash, Glob |
 | juridico-sucessao | digital-ai | succession-law-analysis, inventory-document-analysis, death-certificate-interpretation, lawyer-guidance-validation, inconsistency-risk-detection, legal-concept-explanation, testament-analysis, heir-rights-mapping, arrolamento-analysis, partilha-meacao-colacao | Usuário envia documento de inventário para análise; usuário quer validar orientação de advogado sobre sucessão; dúvida sobre certidão de óbito ou documento cartorial; usuário precisa entender direitos de herdeiros; dúvida sobre prazos e procedimentos de inventário; análise de testamento; cálculo de meação e quotas hereditárias | opus | Read, Write, WebSearch, WebFetch |
 | trendson-sdr | trendson | lead-classification, intent-detection, appointment-scheduling, objection-handling, followup-management, lead-qualification, human-handoff | Lead responde template de prospecção TrendsOn no WhatsApp; qualificação de decisor de marketing B2C; agendamento de reunião comercial; tratamento de objeção em prospecção B2B; follow-up em cadência outbound | sonnet | — |
+| fisco | digital-ai | tax-law-analysis, accounting-standards, tax-planning, tax-regime-advisory, obligations-calendar, tax-controversy, reforma-tributaria-advisory, financial-statements-analysis, cpc-ifrs-advisory, tax-due-diligence, compliance-fiscal, corporate-structuring, holding-advisory, jcp-analysis, incentivos-fiscais, precos-transferencia, simples-nacional, lucro-real-presumido, icms-iss-advisory, carf-strategy, sped-esocial | Dúvida tributária empresarial (qual regime, como calcular, como pagar); planejamento tributário ou estruturação societária; análise de carga tributária ou comparativo de regimes; obrigações acessórias (SPED, eSocial, NF-e); Reforma Tributária (IBS/CBS/IS); contencioso tributário (CARF, transação, parcelamento); análise de demonstrações financeiras e CPCs/IFRS; due diligence tributária em M&A; incentivos fiscais; qualquer questão fiscal ou contábil de pessoa jurídica | opus | Read, Write, Edit, Grep, Glob, WebSearch, WebFetch |
 
 ## Schema de Registro
 
@@ -604,6 +605,11 @@ Campos obrigatórios:
 | dai | oraculus | OWNER quer expor sessão DAI a usuário externo para receber feedback |
 | trendson-sdr | pass_to_human | Lead pede proposta, orçamento, questiona se é bot, ou situação não mapeada nos flows |
 | n8n-expert | trendson-sdr | Pipeline de prospecção TrendsOn precisa de agente SDR para WhatsApp |
+| * (qualquer) | fisco | Dúvida tributária empresarial; análise de regime; planejamento fiscal; obrigações acessórias; Reforma Tributária (IBS/CBS/IS); contencioso CARF; CPCs/IFRS; due diligence tributária |
+| fisco | researcher | Pesquisa de legislação específica (IN RFB, legislação estadual de ICMS, jurisprudência STJ/STF/CARF atualizada) |
+| fisco | specter | Questão tributária com componente contratual, societário ou estratégico que extrapola o fiscal puro (M&A, SPA, responsabilidade tributária em contratos) |
+| specter | fisco | Questão jurídica geral com impacto tributário relevante que exige análise fiscal especializada |
+| juridico-sucessao | fisco | Inventário envolvendo ITCMD, ganho de capital na partilha, holding familiar tributária ou planejamento sucessório fiscal |
 
 ---
 

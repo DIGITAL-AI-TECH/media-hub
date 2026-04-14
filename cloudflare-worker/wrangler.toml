@@ -5,7 +5,7 @@ account_id = "fe0885a03431922a8c75fe7ce4f8a722"
 
 # Variáveis públicas (não sensíveis)
 [vars]
-S3_BUCKET_DOMAIN = "cdn.digital-ai.tech.s3.amazonaws.com"
+S3_BUCKET_DOMAIN = "s3.us-east-1.amazonaws.com/cdn.digital-ai.tech"
 
 # Secrets — configurar via CLI:
 #   wrangler secret put MH_TOKEN_SECRET   (mesmo valor que na API)
