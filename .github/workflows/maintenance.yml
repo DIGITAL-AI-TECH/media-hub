@@ -1,0 +1,16 @@
+name: Maintenance (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Docker command to run on Swarm host'
+        required: true
+        default: 'docker ps --filter name=media-hub --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.CreatedAt}}"'
+
+jobs:
+  run:
+    runs-on: [self-hosted, swarm]
+    steps:
+      - name: Execute command
+        run: ${{ github.event.inputs.command }}
