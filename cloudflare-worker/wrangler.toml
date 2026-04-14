@@ -1,6 +1,7 @@
 name = "media-hub-cdn"
 main = "worker.js"
 compatibility_date = "2024-09-23"
+account_id = "fe0885a03431922a8c75fe7ce4f8a722"
 
 # Variáveis públicas (não sensíveis)
 [vars]
