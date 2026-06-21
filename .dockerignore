@@ -1,0 +1,14 @@
+.git
+.github
+docs
+*.md
+!packages/*/package.json
+!pnpm-lock.yaml
+node_modules
+**/.env
+**/*.log
+coverage
+dist
+.turbo
+cloudflare-worker
+scripts
