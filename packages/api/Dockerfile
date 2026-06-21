@@ -18,7 +18,7 @@ RUN pnpm --filter @media-hub/shared build
 RUN pnpm --filter @media-hub/api build
 
 FROM node:20-alpine AS runner
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 COPY --from=build /app/packages/api/dist ./packages/api/dist
 COPY --from=build /app/shared/dist ./shared/dist
