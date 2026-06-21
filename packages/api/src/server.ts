@@ -24,7 +24,7 @@ async function build() {
 
   await fastify.register(multipart, {
     limits: {
-      fileSize: 500 * 1024 * 1024, // 500MB
+      fileSize: 200 * 1024 * 1024, // 200MB — H-004: reduced from 500MB to prevent OOM in worker (HLS multi-bitrate)
     },
   });
 

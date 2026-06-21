@@ -62,6 +62,20 @@ export async function uploadRoutes(fastify: FastifyInstance) {
     }
 
     const mimeType = data.mimetype || 'application/octet-stream';
+
+    // H-005: Content-Type allowlist — reject unknown/dangerous MIME types
+    const ALLOWED_MIME_TYPES = new Set([
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/heic',
+      'video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo', 'video/mpeg',
+      'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/ogg', 'audio/webm', 'audio/aac',
+    ]);
+    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
+      return reply.status(415).send({
+        error: 'UNSUPPORTED_MEDIA_TYPE',
+        message: `Content-Type '${mimeType}' is not allowed. Supported types: image/*, video/*, audio/*`,
+      });
+    }
+
     const mediaType = detectMediaType(mimeType);
     // Sanitize extension — allowlist alphanumeric only to prevent path traversal in S3 keys
     const rawExt = data.filename.split('.').pop() ?? 'bin';

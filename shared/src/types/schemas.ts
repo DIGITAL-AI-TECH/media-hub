@@ -11,7 +11,10 @@ export type UploadStatus = z.infer<typeof UploadStatusSchema>;
 
 export const CreateUploadSchema = z.object({
   external_ref: z.string().max(256).optional(),
-  callback_url: z.string().url().optional(),
+  callback_url: z.string().url().refine(
+    (url) => url.startsWith('https://'),
+    { message: 'callback_url must use HTTPS' }
+  ).optional(),
   callback_secret: z.string().max(128).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
