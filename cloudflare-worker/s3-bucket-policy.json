@@ -1,24 +1,30 @@
 {
+  "_comment": "SECURITY: CF_S3_SECRET value must NEVER be committed here. Use placeholder only. Apply via: aws s3api put-bucket-policy --bucket cdn.digital-ai.tech --policy file://s3-bucket-policy.json after substituting ${CF_S3_SECRET} with the real value from Wrangler secrets.",
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "AllowPublicRead",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::cdn.digital-ai.tech/*"
+    },
+    {
       "Sid": "DenyMediaHubWithoutRefererSecret",
       "Effect": "Deny",
-      "Principal": "*",
+      "NotPrincipal": {
+        "AWS": [
+          "arn:aws:iam::110013536163:user/transcription-service-bot",
+          "arn:aws:iam::110013536163:root"
+        ]
+      },
       "Action": "s3:GetObject",
       "Resource": "arn:aws:s3:::cdn.digital-ai.tech/media-hub/*",
       "Condition": {
         "StringNotEquals": {
-          "aws:Referer": "https://cf-s3-gate-82b012c3c07306ff85ab1c5e7a03ab5d"
+          "aws:Referer": "${CF_S3_SECRET}"
         }
       }
-    },
-    {
-      "Sid": "PublicReadOtherPrefixes",
-      "Effect": "Allow",
-      "Principal": "*",
-      "Action": "s3:GetObject",
-      "Resource": "arn:aws:s3:::cdn.digital-ai.tech/uploads/*"
     },
     {
       "Sid": "AllowTranscriptionBotWriteMediaHub",

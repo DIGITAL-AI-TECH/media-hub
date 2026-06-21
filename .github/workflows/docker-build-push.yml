@@ -137,6 +137,8 @@ jobs:
       ALLOWED_ORIGINS: ${{ secrets.MEDIA_HUB_ALLOWED_ORIGINS }}
       ADMIN_KEY: ${{ secrets.MEDIA_HUB_ADMIN_KEY }}
       MH_TOKEN_SECRET: ${{ secrets.MEDIA_HUB_MH_TOKEN_SECRET }}
+      REDIS_PASSWORD: ${{ secrets.MEDIA_HUB_REDIS_PASSWORD }}
+      VIEWER_JWT_SECRET: ${{ secrets.MEDIA_HUB_VIEWER_JWT_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v3
