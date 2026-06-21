@@ -130,6 +130,25 @@ export default {
       );
     }
 
+    // ── C-003: Valida tenantSlug do cookie contra o path solicitado ──────────
+    // Cookie formato: "<tenantSlug>:<expires>.<hmac>"
+    // Path formato:   /media-hub/<tenantSlug>/...
+    const cookieParts = token ? token.split(':') : [];
+    const cookieTenantSlug = cookieParts.length >= 2 ? cookieParts[0] : null;
+    // pathname já começa com /media-hub/ (verificado acima)
+    const pathSegments = pathname.split('/'); // ['', 'media-hub', '<tenantSlug>', ...]
+    const pathTenantSlug = pathSegments.length >= 3 ? pathSegments[2] : null;
+
+    if (!cookieTenantSlug || !pathTenantSlug || cookieTenantSlug !== pathTenantSlug) {
+      return new Response(
+        JSON.stringify({ error: 'FORBIDDEN', message: 'Tenant mismatch' }),
+        {
+          status: 403,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        }
+      );
+    }
+
     // ── Token válido → fetch S3 com header secreto ───────────────────────────
     const ext = pathname.split('.').pop()?.toLowerCase();
     const isCacheable = ext === 'ts' || ext === 'webp' || ext === 'mp4';
@@ -210,9 +229,17 @@ export default {
   },
 };
 
+// M-001: CORS allowlist — only permit known origins
+const CORS_ALLOWED_ORIGINS = [
+  'https://ifans.click',
+  'https://www.ifans.click',
+  'https://media.digital-ai.tech',
+  'https://digital-ai.tech',
+];
+
 function addCorsHeaders(response, request) {
   const origin = request.headers.get('Origin');
-  if (origin) {
+  if (origin && CORS_ALLOWED_ORIGINS.includes(origin)) {
     response.headers.set('Access-Control-Allow-Origin', origin);
     response.headers.set('Access-Control-Allow-Credentials', 'true');
     response.headers.set('Vary', 'Origin');
