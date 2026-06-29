@@ -94,15 +94,13 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  redis:
+  media-hub-redis:
     image: redis:7-alpine
     command: redis-server --requirepass ${REDIS_PASSWORD}
     networks:
-      oraculusnet_v2:
-        aliases:
-          - media-hub-redis  # alias único para evitar conflito de DNS com outros Redis na rede
+      - oraculusnet_v2
     volumes:
-      - media_hub_redis:/data
+      - media-hub-redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -125,4 +123,4 @@ networks:
     external: true
 
 volumes:
-  media_hub_redis:
+  media-hub-redis-data:
