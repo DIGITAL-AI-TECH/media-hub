@@ -1,0 +1,39 @@
+name: Media Hub Stack Investigation
+on:
+  workflow_dispatch:
+jobs:
+  investigate:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - name: Media Hub stack services
+        run: docker stack services media-hub 2>/dev/null || echo "No media-hub stack"
+
+      - name: Media Hub service tasks
+        run: |
+          for svc in $(docker stack services media-hub -q 2>/dev/null); do
+            echo "=== Service: $(docker service inspect $svc --format '{{.Spec.Name}}') ==="
+            docker service ps $svc --no-trunc --format "table {{.Name}}	{{.Image}}	{{.CurrentState}}	{{.Error}}" 2>/dev/null
+            echo ""
+          done
+
+      - name: Media Hub docker-stack config
+        run: |
+          for svc in $(docker stack services media-hub -q 2>/dev/null); do
+            echo "=== $(docker service inspect $svc --format '{{.Spec.Name}}') ==="
+            docker service inspect $svc --format '{{json .Spec.TaskTemplate.ContainerSpec}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "no json"
+            echo ""
+          done
+
+      - name: Media Hub service logs (last 20 lines each)
+        run: |
+          for svc in $(docker stack services media-hub -q 2>/dev/null); do
+            svc_name=$(docker service inspect $svc --format '{{.Spec.Name}}')
+            echo "=== $svc_name ==="
+            docker service logs $svc --tail 20 2>&1 || echo "no logs"
+            echo ""
+          done
+
+      - name: Check media-hub compose file locations
+        run: |
+          find / -path '*/media-hub/docker*' -o -path '*/media-hub/compose*' 2>/dev/null | head -20
+          find / -name 'celeryconfig*' -o -name 'celery*' -path '*/media-hub/*' 2>/dev/null | head -10
