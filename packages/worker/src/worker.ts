@@ -5,7 +5,7 @@ import { videoProcessor } from './processors/video.js';
 import { imageProcessor } from './processors/image.js';
 import { audioProcessor } from './processors/audio.js';
 import { genericProcessor } from './processors/generic.js';
-import { checkAndNotifyUploadDone } from './services/webhook.js';
+import { sendFileProcessedCallback, checkAndNotifyUploadDone } from './services/webhook.js';
 
 const redis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 const pool = getPool();
@@ -41,7 +41,27 @@ const worker = new Worker<ProcessingJob>(
       [uploadId, tenantId]
     );
     const upload = uploadResult.rows[0];
-    if (upload) {
+    if (upload?.callback_url) {
+      // Send per-file callback so the consumer can update the file status immediately.
+      // Query processed_urls from the files table (set by the processor above).
+      const fileResult = await pool.query(
+        `SELECT processed_urls, media_type FROM files WHERE id = $1`,
+        [fileId]
+      );
+      const fileData = fileResult.rows[0];
+      if (fileData?.processed_urls) {
+        try {
+          await sendFileProcessedCallback(
+            uploadId, fileId, tenantSlug, upload.external_ref,
+            fileData.processed_urls, fileData.media_type,
+            upload.callback_url, upload.callback_secret
+          );
+        } catch (cbErr) {
+          // Log but do not fail the job — checkAndNotifyUploadDone still fires below
+          console.error(`[worker] sendFileProcessedCallback failed for file=${fileId}:`, cbErr);
+        }
+      }
+      // Then fire the upload-level event (upload.done) when all files are processed
       await checkAndNotifyUploadDone(
         uploadId, tenantSlug, upload.external_ref,
         upload.callback_url, upload.callback_secret
