@@ -1,0 +1,38 @@
+name: Swarm Cleanup — Diagnose Legacy Services
+on:
+  workflow_dispatch:
+jobs:
+  diagnose:
+    runs-on: [self-hosted, swarm]
+    steps:
+      - name: List ALL Swarm stacks
+        run: docker stack ls
+
+      - name: List ALL Swarm services
+        run: docker service ls --format "table {{.Name}}\t{{.Image}}\t{{.Replicas}}\t{{.Ports}}"
+
+      - name: List media-hub services specifically
+        run: docker service ls --filter "name=media-hub" --format "table {{.Name}}\t{{.Image}}\t{{.Replicas}}"
+
+      - name: Inspect each media-hub service image
+        run: |
+          for svc in $(docker service ls --filter "name=media-hub" --format "{{.Name}}"); do
+            echo "=== $svc ==="
+            docker service inspect "$svc" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || echo "inspect failed"
+            echo "--- Last 15 log lines ---"
+            docker service logs "$svc" --tail 15 2>&1 || echo "no logs"
+            echo ""
+          done
+
+      - name: Check for any celery/rabbitmq/python containers
+        run: |
+          echo "=== Running containers with celery/rabbitmq in command ==="
+          docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Command}}" | grep -iE "celery|rabbit|python" || echo "None found in running containers"
+          echo ""
+          echo "=== All containers with media-hub in name ==="
+          docker ps -a --filter "name=media-hub" --format "table {{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}"
+
+      - name: Check for legacy stacks (not media-hub)
+        run: |
+          echo "=== Looking for any stack with media/celery/rabbit in name ==="
+          docker stack ls | grep -iE "media|celery|rabbit" || echo "No matching stacks"
