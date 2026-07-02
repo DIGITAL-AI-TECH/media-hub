@@ -75,7 +75,7 @@ async function generateMasterPlaylist(
   for (const v of variants) {
     const bandwidth = parseInt(v.bitrate) * 1000;
     master += `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=x${v.height},NAME="${v.label}"\n`;
-    master += `${v.label}.m3u8\n\n`;
+    master += `${v.label}/${v.label}.m3u8\n\n`;
   }
   const masterPath = path.join(outputDir, 'master.m3u8');
   await fs.writeFile(masterPath, master);
