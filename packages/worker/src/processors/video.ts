@@ -22,6 +22,23 @@ const RESOLUTIONS: Resolution[] = [
   { label: '4k',    height: 2160, bitrate: '15000k', crf: 20, preset: 'slow' },
 ];
 
+/**
+ * Fix moov atom position — many phone-recorded MP4s have moov at the END of the file.
+ * ffprobe fails with "moov atom not found" on such files because it can't seek to read metadata.
+ * Qt-faststart (via -movflags +faststart) moves moov to the beginning without re-encoding.
+ */
+async function ensureFastStart(inputPath: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .addOption('-c', 'copy')
+      .addOption('-movflags', '+faststart')
+      .output(outputPath)
+      .on('end', () => resolve())
+      .on('error', (err) => reject(err))
+      .run();
+  });
+}
+
 async function getVideoHeight(inputPath: string): Promise<number> {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(inputPath, (err, metadata) => {
@@ -105,13 +122,31 @@ export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
     const s3Stream = await downloadFromS3(s3KeyRaw);
     await pipeline(s3Stream, createWriteStream(localRaw));
 
+    // Fix moov atom for container formats that may have it at end-of-file.
+    // Phone recordings (MP4/MOV) commonly store moov at the end — ffprobe can't read them.
+    // `-c copy -movflags +faststart` remuxes without re-encoding (fast, stream-copy only).
+    let inputForProcessing = localRaw;
+    const needsFastStart = ['mp4', 'mov', 'm4v'].includes(ext.toLowerCase());
+    if (needsFastStart) {
+      const localFastStart = path.join(tmpDir, `faststart.mp4`);
+      try {
+        job.log('Relocating moov atom to start of file (faststart)...');
+        await ensureFastStart(localRaw, localFastStart);
+        inputForProcessing = localFastStart;
+        job.log('moov atom relocated successfully');
+      } catch (e) {
+        job.log(`Warning: faststart relocation failed (${e}), attempting with original file`);
+        // Fall back to original — some files are already faststart or have other issues
+      }
+    }
+
     // Detect original resolution
-    const originalHeight = await getVideoHeight(localRaw);
+    const originalHeight = await getVideoHeight(inputForProcessing);
     job.log(`Video height: ${originalHeight}px`);
 
     // Generate thumbnail
     const thumbLocal = path.join(tmpDir, 'thumb.webp');
-    await generateThumbnail(localRaw, thumbLocal);
+    await generateThumbnail(inputForProcessing, thumbLocal);
 
     // Determine which resolutions to generate (no upscale)
     const applicableResolutions = RESOLUTIONS.filter(r => r.height <= originalHeight);
@@ -124,7 +159,7 @@ export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
     for (const res of applicableResolutions) {
       const variantDir = path.join(tmpDir, res.label);
       await fs.mkdir(variantDir, { recursive: true });
-      await generateHlsVariant(localRaw, variantDir, res);
+      await generateHlsVariant(inputForProcessing, variantDir, res);
 
       // Upload all .ts segments and .m3u8 for this variant
       const variantFiles = await fs.readdir(variantDir);
