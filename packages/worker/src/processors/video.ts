@@ -27,16 +27,57 @@ const RESOLUTIONS: Resolution[] = [
 ];
 
 /**
- * Fix moov atom position — many phone-recorded MP4s have moov at the END of the file.
- * ffprobe fails with "moov atom not found" on such files because it cannot seek.
- * `-movflags +faststart` moves moov to the beginning without re-encoding (stream-copy only).
- *
- * Uses system ffmpeg via execFile (not fluent-ffmpeg with ffmpeg-static) because the
- * static binary may not handle moov-at-end files correctly on all Alpine versions.
+ * Probe video height — internal helper.
+ * Wraps ffmpeg.ffprobe with optional extra CLI args.
  */
-async function ensureFastStart(inputPath: string, outputPath: string): Promise<void> {
-  // 'ffmpeg' resolves to /usr/bin/ffmpeg on Alpine — system version 8.x handles moov-at-end.
-  // `-v error` suppresses the banner so only actual errors appear in stderr.
+async function tryProbeHeight(inputPath: string, extraArgs: string[] = []): Promise<number> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(inputPath, extraArgs, (err, metadata) => {
+      if (err) return reject(err);
+      const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+      const h = videoStream?.height;
+      if (!h) return reject(new Error('no video stream height'));
+      resolve(h);
+    });
+  });
+}
+
+/**
+ * Detect video height with multi-strategy fallback to handle exotic containers:
+ * moov-at-end (phone recordings), fMP4 (iPhone streaming), HEVC in MP4, etc.
+ *
+ * Strategy 1 — Standard ffprobe: works for most files.
+ * Strategy 2 — Large analyzeduration: may help for some moov-at-end files.
+ * Strategy 3 — Stream-copy normalize: ffmpeg CLI can seek to find moov anywhere;
+ *              the output MP4 will have moov at front, which ffprobe can read.
+ * Strategy 4 — Fallback 1080p: ffmpeg HLS encoding reads the raw file with
+ *              -analyzeduration flags directly — no probe needed.
+ *
+ * Returns the detected (or fallback) height AND the best input path to use for
+ * subsequent processing steps.
+ */
+async function detectVideoHeight(
+  inputPath: string,
+  tmpDir: string
+): Promise<{ height: number; inputForProcessing: string }> {
+  // Strategy 1: standard ffprobe
+  try {
+    const h = await tryProbeHeight(inputPath);
+    return { height: h, inputForProcessing: inputPath };
+  } catch { /* try next */ }
+
+  // Strategy 2: large analyzeduration/probesize — handles some moov-at-end cases
+  try {
+    const h = await tryProbeHeight(inputPath, [
+      '-analyzeduration', '2147483647',
+      '-probesize',       '2147483647',
+    ]);
+    return { height: h, inputForProcessing: inputPath };
+  } catch { /* try next */ }
+
+  // Strategy 3: stream-copy faststart via system ffmpeg (can seek to find moov),
+  // then probe the normalized output
+  const normalizedPath = path.join(tmpDir, 'normalized.mp4');
   try {
     await execFileAsync('ffmpeg', [
       '-v', 'error',
@@ -44,24 +85,19 @@ async function ensureFastStart(inputPath: string, outputPath: string): Promise<v
       '-i', inputPath,
       '-c', 'copy',
       '-movflags', '+faststart',
-      outputPath,
+      normalizedPath,
     ], { maxBuffer: 10 * 1024 * 1024 });
-  } catch (err: any) {
-    // stderr may contain ffmpeg banner + error; take the TAIL where the actual error line is
-    const raw = String(err?.stderr || err?.message || err);
-    const tail = raw.split('\n').filter(l => l.trim()).slice(-8).join(' | ');
-    throw new Error(`ensureFastStart failed: ${tail || raw.slice(0, 300)}`);
+    const h = await tryProbeHeight(normalizedPath);
+    // Return normalizedPath as inputForProcessing — it has moov at front, safer for all steps
+    return { height: h, inputForProcessing: normalizedPath };
+  } catch {
+    await fs.unlink(normalizedPath).catch(() => {});
   }
-}
 
-async function getVideoHeight(inputPath: string): Promise<number> {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(inputPath, (err, metadata) => {
-      if (err) return reject(err);
-      const videoStream = metadata.streams.find(s => s.codec_type === 'video');
-      resolve(videoStream?.height || 1080);
-    });
-  });
+  // Strategy 4: fallback — ffmpeg HLS encoding uses -analyzeduration flags directly
+  // on the raw file, so HLS generation still works even without probing height.
+  // Assume 1080p (the scale filter avoids upscaling via min() clamp below).
+  return { height: 1080, inputForProcessing: inputPath };
 }
 
 async function generateHlsVariant(
@@ -71,11 +107,18 @@ async function generateHlsVariant(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
+      // Large analyzeduration/probesize as input options so ffmpeg can find
+      // moov atom even if it's at the end of the file (phone recordings).
+      .inputOptions([
+        '-analyzeduration', '2147483647',
+        '-probesize',       '2147483647',
+      ])
       .videoCodec('libx264')
       .audioCodec('aac')
       .addOption('-crf', String(res.crf))
       .addOption('-preset', res.preset)
-      .addOption('-vf', `scale=-2:${res.height}`)
+      // min() clamp prevents upscaling if input is smaller than target height
+      .addOption('-vf', `scale=-2:min(${res.height}\\,trunc(ih/2)*2)`)
       .addOption('-hls_time', '6')
       .addOption('-hls_list_size', '0')
       .addOption('-hls_segment_filename', path.join(outputDir, `${res.label}_%03d.ts`))
@@ -90,6 +133,10 @@ async function generateHlsVariant(
 async function generateThumbnail(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
+      .inputOptions([
+        '-analyzeduration', '2147483647',
+        '-probesize',       '2147483647',
+      ])
       .seekInput(1)
       .frames(1)
       .output(outputPath)
@@ -137,29 +184,22 @@ export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
     const s3Stream = await downloadFromS3(s3KeyRaw);
     await pipeline(s3Stream, createWriteStream(localRaw));
 
-    // Fix moov atom for container formats that may have it at end-of-file.
-    // Phone recordings (MP4/MOV) commonly store moov at the end — ffprobe can't read them.
-    // `-c copy -movflags +faststart` remuxes without re-encoding (fast, stream-copy only).
-    // NOTE: uses system ffmpeg (not ffmpeg-static) via execFile — see ensureFastStart above.
-    let inputForProcessing = localRaw;
-    const needsFastStart = ['mp4', 'mov', 'm4v'].includes(ext.toLowerCase());
-    if (needsFastStart) {
-      const localFastStart = path.join(tmpDir, `faststart.mp4`);
-      job.log('Relocating moov atom to start of file (faststart)...');
-      await ensureFastStart(localRaw, localFastStart);  // throws on failure — no silent fallback
-      inputForProcessing = localFastStart;
-      job.log('moov atom relocated successfully');
+    // Validate downloaded file — detects incomplete S3 uploads early
+    const { size } = await fs.stat(localRaw);
+    job.log(`Downloaded ${size} bytes (${(size / 1024 / 1024).toFixed(1)} MB) from S3`);
+    if (size < 1024) {
+      throw new Error(`File too small (${size} bytes) — S3 upload may be incomplete`);
     }
 
-    // Detect original resolution
-    const originalHeight = await getVideoHeight(inputForProcessing);
-    job.log(`Video height: ${originalHeight}px`);
+    // Detect height with multi-strategy fallback (Strategy 1-4)
+    const { height: originalHeight, inputForProcessing } = await detectVideoHeight(localRaw, tmpDir);
+    job.log(`Video height: ${originalHeight}px | input: ${path.basename(inputForProcessing)}`);
 
     // Generate thumbnail
     const thumbLocal = path.join(tmpDir, 'thumb.webp');
     await generateThumbnail(inputForProcessing, thumbLocal);
 
-    // Determine which resolutions to generate (no upscale)
+    // Determine which resolutions to generate (no upscale — scale filter clamps via min())
     const applicableResolutions = RESOLUTIONS.filter(r => r.height <= originalHeight);
     if (applicableResolutions.length === 0) applicableResolutions.push(RESOLUTIONS[0]);
 
@@ -204,6 +244,19 @@ export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
       s3KeyProcessed: s3BaseKey,
       tenantId,
     });
+
+  } catch (processingError) {
+    // On the final attempt, mark as 'failed' so the ifans frontend stops polling
+    // and can show the user a clear error instead of an infinite spinner.
+    const isLastAttempt = (job.attemptsMade + 1) >= (job.opts.attempts ?? 1);
+    if (isLastAttempt) {
+      const errMsg = String(processingError instanceof Error ? processingError.message : processingError).slice(0, 500);
+      await updateFileStatus(pool, fileId, 'failed', {
+        tenantId,
+        errorMessage: errMsg,
+      }).catch(() => { /* best-effort — don't shadow the original error */ });
+    }
+    throw processingError;
 
   } finally {
     // ALWAYS cleanup temp files (Gotcha G-001)
