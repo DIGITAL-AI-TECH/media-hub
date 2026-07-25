@@ -4,6 +4,8 @@ import ffmpegPath from 'ffmpeg-static';
 import fs from 'fs/promises';
 import path from 'path';
 import { createWriteStream } from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { pipeline } from 'stream/promises';
 import {
   ProcessingJob, ProcessedUrls,
@@ -12,6 +14,8 @@ import {
 } from '@media-hub/shared';
 
 if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+
+const execFileAsync = promisify(execFile);
 
 interface Resolution { label: string; height: number; bitrate: string; crf: number; preset: string; }
 
@@ -24,19 +28,26 @@ const RESOLUTIONS: Resolution[] = [
 
 /**
  * Fix moov atom position — many phone-recorded MP4s have moov at the END of the file.
- * ffprobe fails with "moov atom not found" on such files because it can't seek to read metadata.
- * Qt-faststart (via -movflags +faststart) moves moov to the beginning without re-encoding.
+ * ffprobe fails with "moov atom not found" on such files because it cannot seek.
+ * `-movflags +faststart` moves moov to the beginning without re-encoding (stream-copy only).
+ *
+ * Uses system ffmpeg via execFile (not fluent-ffmpeg with ffmpeg-static) because the
+ * static binary may not handle moov-at-end files correctly on all Alpine versions.
  */
 async function ensureFastStart(inputPath: string, outputPath: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .addOption('-c', 'copy')
-      .addOption('-movflags', '+faststart')
-      .output(outputPath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
-      .run();
-  });
+  // 'ffmpeg' resolves to /usr/bin/ffmpeg on Alpine — system version 8.x handles moov-at-end.
+  try {
+    await execFileAsync('ffmpeg', [
+      '-y',
+      '-i', inputPath,
+      '-c', 'copy',
+      '-movflags', '+faststart',
+      outputPath,
+    ], { maxBuffer: 10 * 1024 * 1024 });
+  } catch (err: any) {
+    const detail = (err?.stderr || err?.message || String(err)).slice(0, 500);
+    throw new Error(`ensureFastStart failed: ${detail}`);
+  }
 }
 
 async function getVideoHeight(inputPath: string): Promise<number> {
@@ -125,19 +136,15 @@ export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
     // Fix moov atom for container formats that may have it at end-of-file.
     // Phone recordings (MP4/MOV) commonly store moov at the end — ffprobe can't read them.
     // `-c copy -movflags +faststart` remuxes without re-encoding (fast, stream-copy only).
+    // NOTE: uses system ffmpeg (not ffmpeg-static) via execFile — see ensureFastStart above.
     let inputForProcessing = localRaw;
     const needsFastStart = ['mp4', 'mov', 'm4v'].includes(ext.toLowerCase());
     if (needsFastStart) {
       const localFastStart = path.join(tmpDir, `faststart.mp4`);
-      try {
-        job.log('Relocating moov atom to start of file (faststart)...');
-        await ensureFastStart(localRaw, localFastStart);
-        inputForProcessing = localFastStart;
-        job.log('moov atom relocated successfully');
-      } catch (e) {
-        job.log(`Warning: faststart relocation failed (${e}), attempting with original file`);
-        // Fall back to original — some files are already faststart or have other issues
-      }
+      job.log('Relocating moov atom to start of file (faststart)...');
+      await ensureFastStart(localRaw, localFastStart);  // throws on failure — no silent fallback
+      inputForProcessing = localFastStart;
+      job.log('moov atom relocated successfully');
     }
 
     // Detect original resolution
