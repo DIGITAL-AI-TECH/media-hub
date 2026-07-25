@@ -36,8 +36,10 @@ const RESOLUTIONS: Resolution[] = [
  */
 async function ensureFastStart(inputPath: string, outputPath: string): Promise<void> {
   // 'ffmpeg' resolves to /usr/bin/ffmpeg on Alpine — system version 8.x handles moov-at-end.
+  // `-v error` suppresses the banner so only actual errors appear in stderr.
   try {
     await execFileAsync('ffmpeg', [
+      '-v', 'error',
       '-y',
       '-i', inputPath,
       '-c', 'copy',
@@ -45,8 +47,10 @@ async function ensureFastStart(inputPath: string, outputPath: string): Promise<v
       outputPath,
     ], { maxBuffer: 10 * 1024 * 1024 });
   } catch (err: any) {
-    const detail = (err?.stderr || err?.message || String(err)).slice(0, 500);
-    throw new Error(`ensureFastStart failed: ${detail}`);
+    // stderr may contain ffmpeg banner + error; take the TAIL where the actual error line is
+    const raw = String(err?.stderr || err?.message || err);
+    const tail = raw.split('\n').filter(l => l.trim()).slice(-8).join(' | ');
+    throw new Error(`ensureFastStart failed: ${tail || raw.slice(0, 300)}`);
   }
 }
 
