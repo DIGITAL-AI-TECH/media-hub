@@ -71,7 +71,7 @@ const worker = new Worker<ProcessingJob>(
   {
     connection: redis,
     concurrency: env.WORKER_CONCURRENCY,
-    lockDuration: 300000, // 5 min — Gotcha G-008
+    lockDuration: 3600000, // 60 min — large videos (484MB+) take 20-40 min for HLS encoding
   }
 );
 

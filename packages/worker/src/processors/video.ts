@@ -146,7 +146,10 @@ async function generateHlsVariant(
   res: Resolution
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    const startTime = Date.now();
+    const TIMEOUT_MS = 45 * 60 * 1000; // 45 min hard timeout per variant
+
+    const command = ffmpeg(inputPath)
       // Large analyzeduration/probesize + error tolerance so ffmpeg can handle:
       // moov-at-end (phone recordings), partial corruption, unusual containers.
       .inputOptions([
@@ -166,9 +169,38 @@ async function generateHlsVariant(
       .addOption('-hls_segment_filename', path.join(outputDir, `${res.label}_%03d.ts`))
       .addOption('-f', 'hls')
       .output(path.join(outputDir, `${res.label}.m3u8`))
-      .on('end', () => resolve())
-      .on('error', reject)
-      .run();
+      .on('start', (cmd: string) => {
+        console.error(`[media-hub] ffmpeg START ${res.label}: ${cmd}`);
+      })
+      .on('progress', (progress: { percent?: number; timemark?: string }) => {
+        console.error(`[media-hub] ffmpeg PROGRESS ${res.label}: ${(progress.percent ?? 0).toFixed(1)}% timemark=${progress.timemark ?? '?'}`);
+      })
+      .on('stderr', (line: string) => {
+        if (/error|warning/i.test(line)) {
+          console.error(`[media-hub] ffmpeg STDERR ${res.label}: ${line}`);
+        }
+      })
+      .on('end', () => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.error(`[media-hub] ffmpeg DONE ${res.label} in ${elapsed}s`);
+        resolve();
+      })
+      .on('error', (err: Error) => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.error(`[media-hub] ffmpeg ERROR ${res.label} after ${elapsed}s: ${err.message}`);
+        reject(err);
+      });
+
+    command.run();
+
+    // Hard timeout — kill ffmpeg if variant exceeds limit
+    const timer = setTimeout(() => {
+      try { command.kill('SIGKILL'); } catch (_) { /* already dead */ }
+      reject(new Error(`ffmpeg timeout after ${TIMEOUT_MS / 60000} min for ${res.label}`));
+    }, TIMEOUT_MS);
+
+    // Clear timer on normal resolution to avoid dangling handle
+    Promise.resolve().then(() => {}).catch(() => clearTimeout(timer));
   });
 }
 
@@ -184,8 +216,22 @@ async function generateThumbnail(inputPath: string, outputPath: string): Promise
       .seekInput(1)
       .frames(1)
       .output(outputPath)
-      .on('end', () => resolve())
-      .on('error', reject)
+      .on('start', (cmd: string) => {
+        console.error(`[media-hub] ffmpeg THUMBNAIL START: ${cmd}`);
+      })
+      .on('stderr', (line: string) => {
+        if (/error|warning/i.test(line)) {
+          console.error(`[media-hub] ffmpeg THUMBNAIL STDERR: ${line}`);
+        }
+      })
+      .on('end', () => {
+        console.error('[media-hub] ffmpeg THUMBNAIL DONE');
+        resolve();
+      })
+      .on('error', (err: Error) => {
+        console.error(`[media-hub] ffmpeg THUMBNAIL ERROR: ${err.message}`);
+        reject(err);
+      })
       .run();
   });
 }
