@@ -23,10 +23,14 @@ async function build() {
   });
 
   await fastify.register(multipart, {
-    // No fileSize limit here — the API streams directly to S3 without buffering,
-    // so capping here only causes silent truncation (data.file.truncated = true)
-    // and corrupted objects in S3. Size enforcement belongs in the worker layer,
-    // which validates the downloaded file size before processing.
+    limits: {
+      // @fastify/multipart@8.x: if fileSize is not explicitly set, it falls back to
+      // fastify.initialConfig.bodyLimit (default 1MB). This silently truncates all
+      // uploads > 1MB and sets data.file.truncated = true. Must be set explicitly.
+      fileSize: Infinity,
+    },
+    // Stream directly to S3 — never bufferize in memory. Size enforcement belongs in
+    // the worker layer, which validates the downloaded file size before processing.
   });
 
   await fastify.register(dbPlugin);
