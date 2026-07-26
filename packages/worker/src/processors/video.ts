@@ -70,7 +70,7 @@ async function detectVideoHeight(
     const h = await tryProbeHeight(inputPath);
     return { height: h, inputForProcessing: inputPath };
   } catch (err) {
-    log(`detectVideoHeight S1 failed: ${String(err).slice(0, 300)}`);
+    log(`detectVideoHeight S1 failed: ${String(err)}`);
   }
 
   // Strategy 2: large analyzeduration/probesize — handles some moov-at-end cases
@@ -81,7 +81,7 @@ async function detectVideoHeight(
     ]);
     return { height: h, inputForProcessing: inputPath };
   } catch (err) {
-    log(`detectVideoHeight S2 failed: ${String(err).slice(0, 300)}`);
+    log(`detectVideoHeight S2 failed: ${String(err)}`);
   }
 
   // Strategy 3: full re-encode (libx264) via system ffmpeg — handles fMP4 (iPhone),
@@ -104,7 +104,7 @@ async function detectVideoHeight(
     // Return normalizedPath as inputForProcessing — it has moov at front, safer for all steps
     return { height: h, inputForProcessing: normalizedPath };
   } catch (err) {
-    log(`detectVideoHeight S3 failed: ${String(err).slice(0, 300)}`);
+    log(`detectVideoHeight S3 failed: ${String(err)}`);
     await fs.unlink(normalizedPath).catch(() => {});
   }
 
@@ -130,7 +130,7 @@ async function detectVideoHeight(
     const h = await tryProbeHeight(normalizedPath3b);
     return { height: h, inputForProcessing: normalizedPath3b };
   } catch (err) {
-    log(`detectVideoHeight S3b failed: ${String(err).slice(0, 300)}`);
+    log(`detectVideoHeight S3b failed: ${String(err)}`);
     await fs.unlink(normalizedPath3b).catch(() => {});
   }
 
@@ -231,26 +231,35 @@ export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
 
     // Validate downloaded file — detects incomplete S3 uploads early
     const { size } = await fs.stat(localRaw);
+    console.error(`[media-hub] fileId=${fileId} s3Key=${s3KeyRaw} downloaded=${size}B (${(size / 1024 / 1024).toFixed(2)}MB)`);
     job.log(`Downloaded ${size} bytes (${(size / 1024 / 1024).toFixed(1)} MB) from S3`);
     if (size < 1024) {
       throw new Error(`File too small (${size} bytes) — S3 upload may be incomplete`);
     }
 
-    // Diagnostic: read first 16 bytes as hex to detect file type/corruption
-    // Valid MP4/MOV starts with: xx xx xx xx 66 74 79 70 (ftyp box) or 00 00 00 xx 6d 64 61 74
-    // Garbage/error response starts with: 3c 3f 78 6d (<?xm XML) or 48 54 54 50 (HTTP)
+    // Diagnostic: read first 32 bytes as hex to detect file type/corruption.
+    // Valid MP4/MOV: bytes 4-7 = "ftyp" (66 74 79 70) or bytes 0-3 = 00 00 00 xx + "mdat"
+    // Valid WEBM:    bytes 0-3 = 1a 45 df a3 (EBML magic)
+    // HTML error:    bytes 0-3 = 3c 21 44 4f (<!DO) or 3c 68 74 6d (html) or 48 54 54 50 (HTTP)
+    // XML/JSON:      bytes 0 = 3c (<) or 7b ({)
     try {
       const fh = await fs.open(localRaw, 'r');
-      const headerBuf = Buffer.alloc(16);
-      await fh.read(headerBuf, 0, 16, 0);
+      const headerBuf = Buffer.alloc(32);
+      const { bytesRead } = await fh.read(headerBuf, 0, 32, 0);
       await fh.close();
-      job.log(`File header hex: ${headerBuf.toString('hex')} | ascii: ${headerBuf.toString('ascii').replace(/[^\x20-\x7e]/g, '.')}`);
+      const hexStr = headerBuf.slice(0, bytesRead).toString('hex');
+      const asciiStr = headerBuf.slice(0, bytesRead).toString('ascii').replace(/[^\x20-\x7e]/g, '.');
+      console.error(`[media-hub] FILE HEADER fileId=${fileId} hex=${hexStr} ascii=${asciiStr}`);
+      job.log(`File header hex: ${hexStr} | ascii: ${asciiStr}`);
     } catch (hexErr) {
-      job.log(`Warning: could not read file header: ${String(hexErr).slice(0, 100)}`);
+      console.error(`[media-hub] WARNING: could not read file header fileId=${fileId}: ${String(hexErr)}`);
+      job.log(`Warning: could not read file header: ${String(hexErr)}`);
     }
 
     // Detect height with multi-strategy fallback (Strategy 1-4)
-    const { height: originalHeight, inputForProcessing } = await detectVideoHeight(localRaw, tmpDir, (msg) => job.log(msg));
+    const logFn = (msg: string) => { console.error(`[media-hub] detectVideoHeight fileId=${fileId}: ${msg}`); job.log(msg); };
+    const { height: originalHeight, inputForProcessing } = await detectVideoHeight(localRaw, tmpDir, logFn);
+    console.error(`[media-hub] height=${originalHeight}px inputForProcessing=${path.basename(inputForProcessing)} fileId=${fileId}`);
     job.log(`Video height: ${originalHeight}px | input: ${path.basename(inputForProcessing)}`);
 
     // Generate thumbnail
