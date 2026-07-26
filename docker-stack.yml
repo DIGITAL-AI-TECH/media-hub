@@ -70,6 +70,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_PREFIX: media-hub
       CDN_BASE_URL: ${CDN_BASE_URL}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       WORKER_CONCURRENCY: "2"
       LOG_LEVEL: info
     healthcheck:
