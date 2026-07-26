@@ -23,9 +23,10 @@ async function build() {
   });
 
   await fastify.register(multipart, {
-    limits: {
-      fileSize: 200 * 1024 * 1024, // 200MB — H-004: reduced from 500MB to prevent OOM in worker (HLS multi-bitrate)
-    },
+    // No fileSize limit here — the API streams directly to S3 without buffering,
+    // so capping here only causes silent truncation (data.file.truncated = true)
+    // and corrupted objects in S3. Size enforcement belongs in the worker layer,
+    // which validates the downloaded file size before processing.
   });
 
   await fastify.register(dbPlugin);

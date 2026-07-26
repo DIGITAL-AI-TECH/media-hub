@@ -1,6 +1,5 @@
 import { Job } from 'bullmq';
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from 'ffmpeg-static';
 import fs from 'fs/promises';
 import path from 'path';
 import { createWriteStream } from 'fs';

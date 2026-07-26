@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import {
   createUpload, getUpload, incrementUploadFilesCount,
   createFile, getFilesByUpload, detectMediaType,
-  buildS3Key, streamToS3, CreateUploadSchema, ProcessingJob
+  buildS3Key, streamToS3, deleteFromS3, CreateUploadSchema, ProcessingJob
 } from '@media-hub/shared';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
@@ -101,6 +101,21 @@ export async function uploadRoutes(fastify: FastifyInstance) {
       fastify.log.error({ err }, 'S3 upload failed');
       await fastify.db.query(`UPDATE files SET status = 'failed', error_message = $1 WHERE id = $2`, ['Upload to storage failed', fileRecord.id]);
       throw err;
+    }
+
+    // H-007: Check for stream truncation — @fastify/multipart silently truncates streams
+    // that exceed fileSize limit and sets data.file.truncated = true.
+    // If we don't check, a corrupted file lands in S3 and ffmpeg fails with AVERROR_INVALIDDATA.
+    if (data.file.truncated) {
+      await deleteFromS3(s3KeyRaw).catch(() => {});
+      await fastify.db.query(
+        `UPDATE files SET status = 'failed', error_message = $1 WHERE id = $2`,
+        ['File truncated: exceeds size limit', fileRecord.id]
+      );
+      return reply.status(413).send({
+        error: 'FILE_TOO_LARGE',
+        message: 'File exceeds the maximum allowed size',
+      });
     }
 
     // Update s3_key_raw and status to queued
