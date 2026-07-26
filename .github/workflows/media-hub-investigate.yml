@@ -1,144 +1,139 @@
-name: Swarm Diagnostic - Media Hub + Qdrant
+name: Qdrant Collections Setup
 on:
   workflow_dispatch:
 jobs:
-  diagnose:
+  setup-qdrant:
     runs-on: [self-hosted, Linux, X64]
     steps:
-      - name: "P1 - Media Hub service status"
+      - name: "Get full QDRANT config from ifans"
         run: |
-          echo "=== DOCKER SERVICE LS (media-hub) ==="
-          docker service ls --format "table {{.Name}}\t{{.Mode}}\t{{.Replicas}}\t{{.Image}}" | grep -E "media-hub|NAME"
-          echo ""
-          echo "=== WORKER TASKS ==="
-          docker service ps media-hub_worker --no-trunc --format "table {{.Name}}\t{{.CurrentState}}\t{{.Error}}" 2>/dev/null || echo "media-hub_worker NOT FOUND"
-          echo ""
-          echo "=== API TASKS ==="
-          docker service ps media-hub_api --no-trunc --format "table {{.Name}}\t{{.CurrentState}}\t{{.Error}}" 2>/dev/null || echo "media-hub_api NOT FOUND"
-
-      - name: "P1 - Worker logs (last 100)"
-        run: |
-          echo "=== WORKER LOGS ==="
-          docker service logs media-hub_worker --tail 100 --raw 2>&1 || echo "NO WORKER LOGS"
-
-      - name: "P1 - Worker env vars (masked)"
-        run: |
-          echo "=== WORKER ENV ==="
-          docker service inspect media-hub_worker --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          try:
-            envs=json.load(sys.stdin)
-            for e in sorted(envs):
-              k=e.split('=')[0]
-              v=e.split('=',1)[1] if '=' in e else ''
-              masked=v[:4]+'...' if len(v)>8 else v
-              print(f'{k}={masked}')
-          except: print('FAIL')
-          " 2>&1
-
-      - name: "P2 - Redis connectivity test"
-        run: |
-          echo "=== REDIS PING ==="
-          docker run --rm --network oraculusnet_v2 redis:7-alpine redis-cli -h media-hub-redis -p 6379 PING 2>&1 || echo "PING FAILED on oraculusnet_v2"
-          echo ""
-          echo "=== REDIS with password ==="
-          REDIS_PW=$(docker service inspect media-hub_worker --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if e.startswith('REDIS_PASSWORD=') or e.startswith('REDIS_URL='):
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          if [ -n "$REDIS_PW" ]; then
-            if echo "$REDIS_PW" | grep -q "redis://"; then
-              echo "REDIS_URL format detected, extracting password..."
-              PW=$(echo "$REDIS_PW" | sed -n 's|redis://:\(.*\)@.*|\1|p')
-              if [ -n "$PW" ]; then
-                docker run --rm --network oraculusnet_v2 redis:7-alpine redis-cli -h media-hub-redis -p 6379 -a "$PW" PING 2>&1
-              fi
-            else
-              docker run --rm --network oraculusnet_v2 redis:7-alpine redis-cli -h media-hub-redis -p 6379 -a "$REDIS_PW" PING 2>&1
-            fi
-          fi
-
-      - name: "P3 - BullMQ queue status"
-        run: |
-          echo "=== BULL QUEUE STATUS ==="
-          REDIS_URL=$(docker service inspect media-hub_worker --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if e.startswith('REDIS_URL='):
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          PW=$(echo "$REDIS_URL" | sed -n 's|redis://:\(.*\)@.*|\1|p')
-          AUTH_ARG=""
-          [ -n "$PW" ] && AUTH_ARG="-a $PW"
-          echo "--- Waiting jobs ---"
-          docker run --rm --network oraculusnet_v2 redis:7-alpine redis-cli -h media-hub-redis -p 6379 $AUTH_ARG LLEN "bull:media-processing:wait" 2>&1
-          echo "--- Active jobs ---"
-          docker run --rm --network oraculusnet_v2 redis:7-alpine redis-cli -h media-hub-redis -p 6379 $AUTH_ARG LLEN "bull:media-processing:active" 2>&1
-          echo "--- Failed jobs ---"
-          docker run --rm --network oraculusnet_v2 redis:7-alpine redis-cli -h media-hub-redis -p 6379 $AUTH_ARG LLEN "bull:media-processing:failed" 2>&1
-          echo "--- Delayed jobs ---"
-          docker run --rm --network oraculusnet_v2 redis:7-alpine redis-cli -h media-hub-redis -p 6379 $AUTH_ARG ZCARD "bull:media-processing:delayed" 2>&1
-          echo "--- Search for file 3bf34c2c ---"
-          docker run --rm --network oraculusnet_v2 redis:7-alpine redis-cli -h media-hub-redis -p 6379 $AUTH_ARG KEYS "*3bf34c2c*" 2>&1
-
-      - name: "P2 - Qdrant collections check"
-        run: |
-          echo "=== QDRANT ON SWARM ==="
-          docker service ls --format "{{.Name}} {{.Replicas}}" | grep -i qdrant || echo "No qdrant service found"
-          echo ""
-          echo "=== QDRANT COLLECTIONS ==="
-          # Try internal network first
-          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-            curl -s "http://qdrant:6333/collections" 2>&1 || echo "qdrant:6333 failed"
-          echo ""
-          # Try ifans-specific network
-          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-            curl -s "http://ifans_qdrant:6333/collections" 2>&1 || echo "ifans_qdrant:6333 failed"
-          echo ""
-          # Try qdrant hostname variations
-          for host in qdrant ifans_qdrant ifans-qdrant; do
-            echo "--- Trying $host:6333 ---"
-            docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-              curl -s --connect-timeout 3 "http://$host:6333/collections" 2>&1 | head -5
-          done
-
-      - name: "P2 - ifans stack services"
-        run: |
-          echo "=== IFANS SERVICES ==="
-          docker service ls --format "table {{.Name}}\t{{.Replicas}}\t{{.Image}}" | grep -E "ifans|NAME"
-          echo ""
-          echo "=== IFANS QDRANT ENV ==="
+          echo "=== ALL QDRANT-RELATED ENV VARS ==="
           docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
           import sys,json
           envs=json.load(sys.stdin)
           for e in sorted(envs):
             if 'QDRANT' in e.upper():
-              k=e.split('=')[0]
-              v=e.split('=',1)[1] if '=' in e else ''
-              masked=v[:12]+'...' if len(v)>16 else v
-              print(f'{k}={masked}')
+              print(e)
           " 2>&1
 
-      - name: "P2 - Qdrant service details"
+      - name: "List existing collections via qdrant service name"
         run: |
-          echo "=== QDRANT SERVICE INSPECT ==="
-          QDRANT_SVC=$(docker service ls --format "{{.Name}}" | grep -i qdrant | head -1)
-          if [ -n "$QDRANT_SVC" ]; then
-            echo "Found: $QDRANT_SVC"
-            docker service ps "$QDRANT_SVC" --no-trunc --format "table {{.Name}}\t{{.CurrentState}}\t{{.Error}}" 2>/dev/null
-            echo ""
-            docker service logs "$QDRANT_SVC" --tail 20 2>&1 || echo "no logs"
+          # Get QDRANT API key from ifans env
+          QDRANT_API_KEY=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
+          import sys,json
+          envs=json.load(sys.stdin)
+          for e in envs:
+            if 'QDRANT_API_KEY' in e or 'QDRANT_KEY' in e:
+              print(e.split('=',1)[1])
+              break
+          " 2>/dev/null)
+          
+          QDRANT_URL=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
+          import sys,json
+          envs=json.load(sys.stdin)
+          for e in envs:
+            if e.startswith('QDRANT_URL='):
+              print(e.split('=',1)[1])
+              break
+          " 2>/dev/null)
+          
+          echo "QDRANT_URL=$QDRANT_URL"
+          echo "API_KEY_LENGTH=${#QDRANT_API_KEY}"
+          
+          if [ -n "$QDRANT_API_KEY" ]; then
+            echo "--- Listing collections with API key ---"
+            docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
+              curl -s "$QDRANT_URL/collections" -H "api-key: $QDRANT_API_KEY" 2>&1
           else
-            echo "No Qdrant service found in Swarm"
+            echo "No API key found, trying without..."
+            docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
+              curl -s "$QDRANT_URL/collections" 2>&1
           fi
 
-      - name: "Health - API check"
+      - name: "Create ifans_content_embeddings collection"
         run: |
-          echo "=== MEDIA HUB API ==="
-          curl -s --connect-timeout 5 "https://media.digital-ai.tech/v1/health" 2>&1 || echo "API unreachable"
+          QDRANT_API_KEY=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
+          import sys,json
+          envs=json.load(sys.stdin)
+          for e in envs:
+            if 'QDRANT_API_KEY' in e or 'QDRANT_KEY' in e:
+              print(e.split('=',1)[1])
+              break
+          " 2>/dev/null)
+          
+          QDRANT_URL=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
+          import sys,json
+          envs=json.load(sys.stdin)
+          for e in envs:
+            if e.startswith('QDRANT_URL='):
+              print(e.split('=',1)[1])
+              break
+          " 2>/dev/null)
+          
+          echo "Creating ifans_content_embeddings..."
+          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
+            curl -s -X PUT "$QDRANT_URL/collections/ifans_content_embeddings" \
+            -H "api-key: $QDRANT_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"vectors":{"size":1536,"distance":"Cosine"},"hnsw_config":{"m":16,"ef_construct":100},"quantization_config":{"scalar":{"type":"int8","always_ram":true}}}' 2>&1
+
+      - name: "Create ifans_user_embeddings collection"
+        run: |
+          QDRANT_API_KEY=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
+          import sys,json
+          envs=json.load(sys.stdin)
+          for e in envs:
+            if 'QDRANT_API_KEY' in e or 'QDRANT_KEY' in e:
+              print(e.split('=',1)[1])
+              break
+          " 2>/dev/null)
+          
+          QDRANT_URL=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
+          import sys,json
+          envs=json.load(sys.stdin)
+          for e in envs:
+            if e.startswith('QDRANT_URL='):
+              print(e.split('=',1)[1])
+              break
+          " 2>/dev/null)
+          
+          echo "Creating ifans_user_embeddings..."
+          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
+            curl -s -X PUT "$QDRANT_URL/collections/ifans_user_embeddings" \
+            -H "api-key: $QDRANT_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"vectors":{"size":1536,"distance":"Cosine"},"hnsw_config":{"m":16,"ef_construct":100},"quantization_config":{"scalar":{"type":"int8","always_ram":true}}}' 2>&1
+
+      - name: "Verify collections were created"
+        run: |
+          QDRANT_API_KEY=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
+          import sys,json
+          envs=json.load(sys.stdin)
+          for e in envs:
+            if 'QDRANT_API_KEY' in e or 'QDRANT_KEY' in e:
+              print(e.split('=',1)[1])
+              break
+          " 2>/dev/null)
+          
+          QDRANT_URL=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
+          import sys,json
+          envs=json.load(sys.stdin)
+          for e in envs:
+            if e.startswith('QDRANT_URL='):
+              print(e.split('=',1)[1])
+              break
+          " 2>/dev/null)
+          
+          echo "=== ALL COLLECTIONS ==="
+          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
+            curl -s "$QDRANT_URL/collections" -H "api-key: $QDRANT_API_KEY" 2>&1
+          
+          echo ""
+          echo "=== ifans_content_embeddings info ==="
+          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
+            curl -s "$QDRANT_URL/collections/ifans_content_embeddings" -H "api-key: $QDRANT_API_KEY" 2>&1
+          
+          echo ""
+          echo "=== ifans_user_embeddings info ==="
+          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
+            curl -s "$QDRANT_URL/collections/ifans_user_embeddings" -H "api-key: $QDRANT_API_KEY" 2>&1
