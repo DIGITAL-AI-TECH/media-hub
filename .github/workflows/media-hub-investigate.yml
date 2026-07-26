@@ -1,76 +1,79 @@
-name: Qdrant Debug Deep
+name: Create Qdrant Collections for ifans
 on:
   workflow_dispatch:
 jobs:
-  debug:
+  create-collections:
     runs-on: [self-hosted, Linux, X64]
     steps:
-      - name: "Qdrant service env and config"
+      - name: "Create ifans_content_embeddings"
         run: |
-          echo "=== ifans_qdrant ENV ==="
-          docker service inspect ifans_qdrant --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No env"
-          echo ""
-          echo "=== ifans_qdrant ARGS ==="
-          docker service inspect ifans_qdrant --format '{{json .Spec.TaskTemplate.ContainerSpec.Args}}' 2>/dev/null || echo "No args"
-          echo ""
-          echo "=== ifans_qdrant MOUNTS ==="
-          docker service inspect ifans_qdrant --format '{{json .Spec.TaskTemplate.ContainerSpec.Mounts}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No mounts"
-          echo ""
-          echo "=== ALL ifans env for QDRANT ==="
-          docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in sorted(envs):
-            print(e)
+          CONTAINER=$(docker ps --filter name=ifans_api -q | head -1)
+          echo "Using container: $CONTAINER"
+          docker exec $CONTAINER sh -c '
+            echo "Creating ifans_content_embeddings..."
+            wget -qO- --post-data="{\"vectors\":{\"size\":1536,\"distance\":\"Cosine\"},\"hnsw_config\":{\"m\":16,\"ef_construct\":100},\"quantization_config\":{\"scalar\":{\"type\":\"int8\",\"always_ram\":true}}}" \
+              --header="Content-Type: application/json" \
+              "http://qdrant:6333/collections/ifans_content_embeddings" \
+              --method=PUT 2>&1 || echo "WGET PUT failed, trying alternative..."
+          '
+
+      - name: "Create ifans_content_embeddings (alternative method)"
+        run: |
+          CONTAINER=$(docker ps --filter name=ifans_api -q | head -1)
+          # Use node from within the container since it has node
+          docker exec $CONTAINER node -e "
+            const http = require('http');
+            const data = JSON.stringify({
+              vectors: { size: 1536, distance: 'Cosine' },
+              hnsw_config: { m: 16, ef_construct: 100 },
+              quantization_config: { scalar: { type: 'int8', always_ram: true } }
+            });
+            const req = http.request({
+              hostname: 'qdrant', port: 6333,
+              path: '/collections/ifans_content_embeddings',
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', 'Content-Length': data.length }
+            }, (res) => {
+              let body = '';
+              res.on('data', (d) => body += d);
+              res.on('end', () => console.log('content_embeddings:', res.statusCode, body));
+            });
+            req.write(data);
+            req.end();
           " 2>&1
 
-      - name: "DNS resolution test - qdrant vs ifans_qdrant"
-        run: |
-          echo "=== DNS resolution for 'qdrant' from ifans_api container ==="
-          CONTAINER=$(docker ps --filter name=ifans_api -q | head -1)
-          if [ -n "$CONTAINER" ]; then
-            docker exec $CONTAINER sh -c "getent hosts qdrant 2>/dev/null || nslookup qdrant 2>/dev/null || echo 'DNS lookup failed'" 2>&1
-            echo ""
-            echo "=== DNS resolution for 'ifans_qdrant' ==="
-            docker exec $CONTAINER sh -c "getent hosts ifans_qdrant 2>/dev/null || nslookup ifans_qdrant 2>/dev/null || echo 'DNS lookup failed'" 2>&1
-          else
-            echo "No ifans_api container found"
-          fi
-
-      - name: "Check qdrant config file"
-        run: |
-          CONTAINER=$(docker ps --filter name=ifans_qdrant -q | head -1)
-          if [ -n "$CONTAINER" ]; then
-            echo "=== Qdrant config.yaml ==="
-            docker exec $CONTAINER cat /qdrant/config/config.yaml 2>/dev/null || echo "No config.yaml"
-            echo ""
-            echo "=== Qdrant production.yaml ==="
-            docker exec $CONTAINER cat /qdrant/config/production.yaml 2>/dev/null || echo "No production.yaml"
-            echo ""
-            echo "=== Qdrant /qdrant/config/ listing ==="
-            docker exec $CONTAINER ls -la /qdrant/config/ 2>/dev/null || echo "No config dir"
-          else
-            echo "No qdrant container found"
-          fi
-
-      - name: "Try qdrant without API key from within network"
+      - name: "Create ifans_user_embeddings"
         run: |
           CONTAINER=$(docker ps --filter name=ifans_api -q | head -1)
-          if [ -n "$CONTAINER" ]; then
-            echo "=== curl from ifans_api to qdrant:6333 ==="
-            docker exec $CONTAINER sh -c "curl -s http://qdrant:6333/collections 2>&1 || wget -qO- http://qdrant:6333/collections 2>&1" || echo "Failed"
-            echo ""
-            echo "=== curl to ifans_qdrant:6333 ==="
-            docker exec $CONTAINER sh -c "curl -s http://ifans_qdrant:6333/collections 2>&1 || wget -qO- http://ifans_qdrant:6333/collections 2>&1" || echo "Failed"
-          fi
+          docker exec $CONTAINER node -e "
+            const http = require('http');
+            const data = JSON.stringify({
+              vectors: { size: 1536, distance: 'Cosine' },
+              hnsw_config: { m: 16, ef_construct: 100 },
+              quantization_config: { scalar: { type: 'int8', always_ram: true } }
+            });
+            const req = http.request({
+              hostname: 'qdrant', port: 6333,
+              path: '/collections/ifans_user_embeddings',
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', 'Content-Length': data.length }
+            }, (res) => {
+              let body = '';
+              res.on('data', (d) => body += d);
+              res.on('end', () => console.log('user_embeddings:', res.statusCode, body));
+            });
+            req.write(data);
+            req.end();
+          " 2>&1
 
-      - name: "Check qdrant_qdrant (separate stack)"
+      - name: "Verify collections"
         run: |
-          echo "=== qdrant_qdrant ENV ==="
-          docker service inspect qdrant_qdrant --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No env"
+          CONTAINER=$(docker ps --filter name=ifans_api -q | head -1)
+          echo "=== COLLECTIONS LIST ==="
+          docker exec $CONTAINER sh -c 'wget -qO- http://qdrant:6333/collections' 2>&1
           echo ""
-          echo "=== qdrant_qdrant networks ==="
-          docker service inspect qdrant_qdrant --format '{{json .Spec.TaskTemplate.Networks}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No networks"
+          echo "=== ifans_content_embeddings ==="
+          docker exec $CONTAINER sh -c 'wget -qO- http://qdrant:6333/collections/ifans_content_embeddings' 2>&1
           echo ""
-          echo "=== ifans_qdrant networks ==="
-          docker service inspect ifans_qdrant --format '{{json .Spec.TaskTemplate.Networks}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No networks"
+          echo "=== ifans_user_embeddings ==="
+          docker exec $CONTAINER sh -c 'wget -qO- http://qdrant:6333/collections/ifans_user_embeddings' 2>&1
