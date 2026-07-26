@@ -3,18 +3,18 @@ import { promises as dns } from 'dns';
 import { getPool } from '@media-hub/shared';
 import { checkAndFinalizeUpload, updateUploadStatus } from '@media-hub/shared';
 
-// SSRF protection: block private/loopback/link-local IPs and non-HTTPS URLs
-function isBlockedIp(ip: string): boolean {
-  // Block loopback, RFC1918 private ranges, link-local, and AWS metadata endpoint
+// SSRF protection: block dangerous callback targets.
+// NOTE: callback_url is set by authenticated tenants via the API (ADMIN_KEY),
+// NOT by end users. We block obviously dangerous targets (localhost, link-local,
+// AWS metadata) but ALLOW RFC1918 private IPs because in Docker Swarm deployments
+// the callback hostname (e.g. api.ifans.click) resolves to a Docker overlay
+// network IP (10.0.x.x / 172.x.x.x). Blocking those breaks the webhook entirely.
+function isDangerousIp(ip: string): boolean {
   const blocked = [
-    /^127\./,
-    /^10\./,
-    /^172\.(1[6-9]|2\d|3[01])\./,
-    /^192\.168\./,
-    /^169\.254\./,
-    /^::1$/,
-    /^fc00:/i,
-    /^fe80:/i,
+    /^127\./,           // loopback
+    /^169\.254\./,      // link-local (AWS metadata endpoint)
+    /^::1$/,            // IPv6 loopback
+    /^fe80:/i,          // IPv6 link-local
   ];
   return blocked.some(r => r.test(ip));
 }
@@ -30,14 +30,14 @@ async function validateCallbackUrl(url: string): Promise<void> {
     throw new Error('Callback URL must use HTTPS');
   }
   const hostname = parsed.hostname;
-  // Block literal IPs and hostnames that are obviously private
-  if (hostname === 'localhost' || isBlockedIp(hostname)) {
+  // Block literal dangerous hostnames/IPs
+  if (hostname === 'localhost' || isDangerousIp(hostname)) {
     throw new Error(`Callback URL targets a blocked address: ${hostname}`);
   }
-  // Resolve DNS and validate the resolved IP (prevents DNS rebinding attacks)
+  // Resolve DNS and validate the resolved IP
   try {
     const { address } = await dns.lookup(hostname);
-    if (isBlockedIp(address)) {
+    if (isDangerousIp(address)) {
       throw new Error(`Resolved IP ${address} is in blocked range`);
     }
   } catch (err: unknown) {

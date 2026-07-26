@@ -172,9 +172,16 @@ async function generateHlsVariant(
       .on('start', (cmd: string) => {
         console.error(`[media-hub] ffmpeg START ${res.label}: ${cmd}`);
       })
-      .on('progress', (progress: { percent?: number; timemark?: string }) => {
-        console.error(`[media-hub] ffmpeg PROGRESS ${res.label}: ${(progress.percent ?? 0).toFixed(1)}% timemark=${progress.timemark ?? '?'}`);
-      })
+      .on('progress', (() => {
+        let lastLoggedPct = -1;
+        return (progress: { percent?: number; timemark?: string }) => {
+          const pct = Math.floor((progress.percent ?? 0) / 5) * 5; // bucket to nearest 5%
+          if (pct > lastLoggedPct) {
+            lastLoggedPct = pct;
+            console.error(`[media-hub] ffmpeg PROGRESS ${res.label}: ${pct}% timemark=${progress.timemark ?? '?'}`);
+          }
+        };
+      })())
       .on('stderr', (line: string) => {
         if (/error|warning/i.test(line)) {
           console.error(`[media-hub] ffmpeg STDERR ${res.label}: ${line}`);

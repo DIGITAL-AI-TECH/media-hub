@@ -56,16 +56,25 @@ const worker = new Worker<ProcessingJob>(
             fileData.processed_urls, fileData.media_type,
             upload.callback_url, upload.callback_secret
           );
+          console.log(`[worker] Webhook file.processed sent: file=${fileId} url=${upload.callback_url}`);
         } catch (cbErr) {
-          // Log but do not fail the job — checkAndNotifyUploadDone still fires below
-          console.error(`[worker] sendFileProcessedCallback failed for file=${fileId}:`, cbErr);
+          // Log but do not fail the job — checkAndNotifyUploadDone still fires below.
+          // IMPORTANT: this is the most common silent failure — if this fires, the
+          // consumer (e.g. ifans) will NOT know the file is ready until it polls.
+          const errMsg = cbErr instanceof Error ? cbErr.message : String(cbErr);
+          console.error(`[worker] WEBHOOK FAILED file.processed file=${fileId} url=${upload.callback_url}: ${errMsg}`);
         }
       }
       // Then fire the upload-level event (upload.done) when all files are processed
-      await checkAndNotifyUploadDone(
-        uploadId, tenantSlug, upload.external_ref,
-        upload.callback_url, upload.callback_secret
-      );
+      try {
+        await checkAndNotifyUploadDone(
+          uploadId, tenantSlug, upload.external_ref,
+          upload.callback_url, upload.callback_secret
+        );
+      } catch (uploadCbErr) {
+        const errMsg = uploadCbErr instanceof Error ? uploadCbErr.message : String(uploadCbErr);
+        console.error(`[worker] WEBHOOK FAILED upload.done upload=${uploadId} url=${upload.callback_url}: ${errMsg}`);
+      }
     }
   },
   {
