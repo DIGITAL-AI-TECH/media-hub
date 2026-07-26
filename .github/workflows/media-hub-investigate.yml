@@ -1,139 +1,76 @@
-name: Qdrant Collections Setup
+name: Qdrant Debug Deep
 on:
   workflow_dispatch:
 jobs:
-  setup-qdrant:
+  debug:
     runs-on: [self-hosted, Linux, X64]
     steps:
-      - name: "Get full QDRANT config from ifans"
+      - name: "Qdrant service env and config"
         run: |
-          echo "=== ALL QDRANT-RELATED ENV VARS ==="
+          echo "=== ifans_qdrant ENV ==="
+          docker service inspect ifans_qdrant --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No env"
+          echo ""
+          echo "=== ifans_qdrant ARGS ==="
+          docker service inspect ifans_qdrant --format '{{json .Spec.TaskTemplate.ContainerSpec.Args}}' 2>/dev/null || echo "No args"
+          echo ""
+          echo "=== ifans_qdrant MOUNTS ==="
+          docker service inspect ifans_qdrant --format '{{json .Spec.TaskTemplate.ContainerSpec.Mounts}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No mounts"
+          echo ""
+          echo "=== ALL ifans env for QDRANT ==="
           docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
           import sys,json
           envs=json.load(sys.stdin)
           for e in sorted(envs):
-            if 'QDRANT' in e.upper():
-              print(e)
+            print(e)
           " 2>&1
 
-      - name: "List existing collections via qdrant service name"
+      - name: "DNS resolution test - qdrant vs ifans_qdrant"
         run: |
-          # Get QDRANT API key from ifans env
-          QDRANT_API_KEY=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if 'QDRANT_API_KEY' in e or 'QDRANT_KEY' in e:
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          
-          QDRANT_URL=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if e.startswith('QDRANT_URL='):
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          
-          echo "QDRANT_URL=$QDRANT_URL"
-          echo "API_KEY_LENGTH=${#QDRANT_API_KEY}"
-          
-          if [ -n "$QDRANT_API_KEY" ]; then
-            echo "--- Listing collections with API key ---"
-            docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-              curl -s "$QDRANT_URL/collections" -H "api-key: $QDRANT_API_KEY" 2>&1
+          echo "=== DNS resolution for 'qdrant' from ifans_api container ==="
+          CONTAINER=$(docker ps --filter name=ifans_api -q | head -1)
+          if [ -n "$CONTAINER" ]; then
+            docker exec $CONTAINER sh -c "getent hosts qdrant 2>/dev/null || nslookup qdrant 2>/dev/null || echo 'DNS lookup failed'" 2>&1
+            echo ""
+            echo "=== DNS resolution for 'ifans_qdrant' ==="
+            docker exec $CONTAINER sh -c "getent hosts ifans_qdrant 2>/dev/null || nslookup ifans_qdrant 2>/dev/null || echo 'DNS lookup failed'" 2>&1
           else
-            echo "No API key found, trying without..."
-            docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-              curl -s "$QDRANT_URL/collections" 2>&1
+            echo "No ifans_api container found"
           fi
 
-      - name: "Create ifans_content_embeddings collection"
+      - name: "Check qdrant config file"
         run: |
-          QDRANT_API_KEY=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if 'QDRANT_API_KEY' in e or 'QDRANT_KEY' in e:
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          
-          QDRANT_URL=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if e.startswith('QDRANT_URL='):
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          
-          echo "Creating ifans_content_embeddings..."
-          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-            curl -s -X PUT "$QDRANT_URL/collections/ifans_content_embeddings" \
-            -H "api-key: $QDRANT_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"vectors":{"size":1536,"distance":"Cosine"},"hnsw_config":{"m":16,"ef_construct":100},"quantization_config":{"scalar":{"type":"int8","always_ram":true}}}' 2>&1
+          CONTAINER=$(docker ps --filter name=ifans_qdrant -q | head -1)
+          if [ -n "$CONTAINER" ]; then
+            echo "=== Qdrant config.yaml ==="
+            docker exec $CONTAINER cat /qdrant/config/config.yaml 2>/dev/null || echo "No config.yaml"
+            echo ""
+            echo "=== Qdrant production.yaml ==="
+            docker exec $CONTAINER cat /qdrant/config/production.yaml 2>/dev/null || echo "No production.yaml"
+            echo ""
+            echo "=== Qdrant /qdrant/config/ listing ==="
+            docker exec $CONTAINER ls -la /qdrant/config/ 2>/dev/null || echo "No config dir"
+          else
+            echo "No qdrant container found"
+          fi
 
-      - name: "Create ifans_user_embeddings collection"
+      - name: "Try qdrant without API key from within network"
         run: |
-          QDRANT_API_KEY=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if 'QDRANT_API_KEY' in e or 'QDRANT_KEY' in e:
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          
-          QDRANT_URL=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if e.startswith('QDRANT_URL='):
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          
-          echo "Creating ifans_user_embeddings..."
-          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-            curl -s -X PUT "$QDRANT_URL/collections/ifans_user_embeddings" \
-            -H "api-key: $QDRANT_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"vectors":{"size":1536,"distance":"Cosine"},"hnsw_config":{"m":16,"ef_construct":100},"quantization_config":{"scalar":{"type":"int8","always_ram":true}}}' 2>&1
+          CONTAINER=$(docker ps --filter name=ifans_api -q | head -1)
+          if [ -n "$CONTAINER" ]; then
+            echo "=== curl from ifans_api to qdrant:6333 ==="
+            docker exec $CONTAINER sh -c "curl -s http://qdrant:6333/collections 2>&1 || wget -qO- http://qdrant:6333/collections 2>&1" || echo "Failed"
+            echo ""
+            echo "=== curl to ifans_qdrant:6333 ==="
+            docker exec $CONTAINER sh -c "curl -s http://ifans_qdrant:6333/collections 2>&1 || wget -qO- http://ifans_qdrant:6333/collections 2>&1" || echo "Failed"
+          fi
 
-      - name: "Verify collections were created"
+      - name: "Check qdrant_qdrant (separate stack)"
         run: |
-          QDRANT_API_KEY=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if 'QDRANT_API_KEY' in e or 'QDRANT_KEY' in e:
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          
-          QDRANT_URL=$(docker service inspect ifans_api --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -c "
-          import sys,json
-          envs=json.load(sys.stdin)
-          for e in envs:
-            if e.startswith('QDRANT_URL='):
-              print(e.split('=',1)[1])
-              break
-          " 2>/dev/null)
-          
-          echo "=== ALL COLLECTIONS ==="
-          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-            curl -s "$QDRANT_URL/collections" -H "api-key: $QDRANT_API_KEY" 2>&1
-          
+          echo "=== qdrant_qdrant ENV ==="
+          docker service inspect qdrant_qdrant --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No env"
           echo ""
-          echo "=== ifans_content_embeddings info ==="
-          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-            curl -s "$QDRANT_URL/collections/ifans_content_embeddings" -H "api-key: $QDRANT_API_KEY" 2>&1
-          
+          echo "=== qdrant_qdrant networks ==="
+          docker service inspect qdrant_qdrant --format '{{json .Spec.TaskTemplate.Networks}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No networks"
           echo ""
-          echo "=== ifans_user_embeddings info ==="
-          docker run --rm --network oraculusnet_v2 curlimages/curl:latest \
-            curl -s "$QDRANT_URL/collections/ifans_user_embeddings" -H "api-key: $QDRANT_API_KEY" 2>&1
+          echo "=== ifans_qdrant networks ==="
+          docker service inspect ifans_qdrant --format '{{json .Spec.TaskTemplate.Networks}}' 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "No networks"
