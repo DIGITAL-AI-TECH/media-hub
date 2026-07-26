@@ -52,6 +52,8 @@ async function tryProbeHeight(inputPath: string, extraArgs: string[] = []): Prom
  * Strategy 2 — Large analyzeduration: may help for some moov-at-end files.
  * Strategy 3 — Stream-copy normalize: ffmpeg CLI can seek to find moov anywhere;
  *              the output MP4 will have moov at front, which ffprobe can read.
+ * Strategy 3b — Error-tolerant normalize: same as 3 but with -err_detect ignore_err
+ *               and -fflags +genpts for partially corrupted files.
  * Strategy 4 — Fallback 1080p: ffmpeg HLS encoding reads the raw file with
  *              -analyzeduration flags directly — no probe needed.
  *
@@ -60,13 +62,16 @@ async function tryProbeHeight(inputPath: string, extraArgs: string[] = []): Prom
  */
 async function detectVideoHeight(
   inputPath: string,
-  tmpDir: string
+  tmpDir: string,
+  log: (msg: string) => void,
 ): Promise<{ height: number; inputForProcessing: string }> {
   // Strategy 1: standard ffprobe
   try {
     const h = await tryProbeHeight(inputPath);
     return { height: h, inputForProcessing: inputPath };
-  } catch { /* try next */ }
+  } catch (err) {
+    log(`detectVideoHeight S1 failed: ${String(err).slice(0, 300)}`);
+  }
 
   // Strategy 2: large analyzeduration/probesize — handles some moov-at-end cases
   try {
@@ -75,7 +80,9 @@ async function detectVideoHeight(
       '-probesize',       '2147483647',
     ]);
     return { height: h, inputForProcessing: inputPath };
-  } catch { /* try next */ }
+  } catch (err) {
+    log(`detectVideoHeight S2 failed: ${String(err).slice(0, 300)}`);
+  }
 
   // Strategy 3: full re-encode (libx264) via system ffmpeg — handles fMP4 (iPhone),
   // HEVC in MP4, and moov-at-end files that stream-copy (-c copy) cannot remux.
@@ -96,13 +103,41 @@ async function detectVideoHeight(
     const h = await tryProbeHeight(normalizedPath);
     // Return normalizedPath as inputForProcessing — it has moov at front, safer for all steps
     return { height: h, inputForProcessing: normalizedPath };
-  } catch {
+  } catch (err) {
+    log(`detectVideoHeight S3 failed: ${String(err).slice(0, 300)}`);
     await fs.unlink(normalizedPath).catch(() => {});
+  }
+
+  // Strategy 3b: error-tolerant re-encode — handles partially corrupted files or
+  // unusual iPhone/Android container variants that strict mode rejects.
+  const normalizedPath3b = path.join(tmpDir, 'normalized3b.mp4');
+  try {
+    await execFileAsync('ffmpeg', [
+      '-err_detect', 'ignore_err',
+      '-fflags', '+genpts+igndts',
+      '-analyzeduration', '2147483647',
+      '-probesize',       '2147483647',
+      '-v', 'warning',
+      '-y',
+      '-i', inputPath,
+      '-c:v', 'libx264',
+      '-c:a', 'aac',
+      '-preset', 'ultrafast',
+      '-t', '5',
+      '-movflags', '+faststart',
+      normalizedPath3b,
+    ], { maxBuffer: 10 * 1024 * 1024 });
+    const h = await tryProbeHeight(normalizedPath3b);
+    return { height: h, inputForProcessing: normalizedPath3b };
+  } catch (err) {
+    log(`detectVideoHeight S3b failed: ${String(err).slice(0, 300)}`);
+    await fs.unlink(normalizedPath3b).catch(() => {});
   }
 
   // Strategy 4: fallback — ffmpeg HLS encoding uses -analyzeduration flags directly
   // on the raw file, so HLS generation still works even without probing height.
   // Assume 1080p (the scale filter avoids upscaling via min() clamp below).
+  log('detectVideoHeight S4: using fallback 1080p');
   return { height: 1080, inputForProcessing: inputPath };
 }
 
@@ -113,9 +148,11 @@ async function generateHlsVariant(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
-      // Large analyzeduration/probesize as input options so ffmpeg can find
-      // moov atom even if it's at the end of the file (phone recordings).
+      // Large analyzeduration/probesize + error tolerance so ffmpeg can handle:
+      // moov-at-end (phone recordings), partial corruption, unusual containers.
       .inputOptions([
+        '-err_detect', 'ignore_err',
+        '-fflags', '+genpts+igndts',
         '-analyzeduration', '2147483647',
         '-probesize',       '2147483647',
       ])
@@ -140,6 +177,8 @@ async function generateThumbnail(inputPath: string, outputPath: string): Promise
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .inputOptions([
+        '-err_detect', 'ignore_err',
+        '-fflags', '+genpts+igndts',
         '-analyzeduration', '2147483647',
         '-probesize',       '2147483647',
       ])
@@ -197,8 +236,21 @@ export async function videoProcessor(job: Job<ProcessingJob>): Promise<void> {
       throw new Error(`File too small (${size} bytes) — S3 upload may be incomplete`);
     }
 
+    // Diagnostic: read first 16 bytes as hex to detect file type/corruption
+    // Valid MP4/MOV starts with: xx xx xx xx 66 74 79 70 (ftyp box) or 00 00 00 xx 6d 64 61 74
+    // Garbage/error response starts with: 3c 3f 78 6d (<?xm XML) or 48 54 54 50 (HTTP)
+    try {
+      const fh = await fs.open(localRaw, 'r');
+      const headerBuf = Buffer.alloc(16);
+      await fh.read(headerBuf, 0, 16, 0);
+      await fh.close();
+      job.log(`File header hex: ${headerBuf.toString('hex')} | ascii: ${headerBuf.toString('ascii').replace(/[^\x20-\x7e]/g, '.')}`);
+    } catch (hexErr) {
+      job.log(`Warning: could not read file header: ${String(hexErr).slice(0, 100)}`);
+    }
+
     // Detect height with multi-strategy fallback (Strategy 1-4)
-    const { height: originalHeight, inputForProcessing } = await detectVideoHeight(localRaw, tmpDir);
+    const { height: originalHeight, inputForProcessing } = await detectVideoHeight(localRaw, tmpDir, (msg) => job.log(msg));
     job.log(`Video height: ${originalHeight}px | input: ${path.basename(inputForProcessing)}`);
 
     // Generate thumbnail
