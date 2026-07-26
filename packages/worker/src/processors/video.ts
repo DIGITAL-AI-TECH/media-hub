@@ -13,7 +13,9 @@ import {
   buildS3Key, buildCdnUrl, uploadFileToS3, downloadFromS3
 } from '@media-hub/shared';
 
-if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+// Do NOT use ffmpeg-static — the bundled binary cannot seek to find moov atom
+// at the end of phone recordings. System ffmpeg 8.0.1 (Alpine) handles this correctly.
+// if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
 
 const execFileAsync = promisify(execFile);
 
@@ -75,15 +77,19 @@ async function detectVideoHeight(
     return { height: h, inputForProcessing: inputPath };
   } catch { /* try next */ }
 
-  // Strategy 3: stream-copy faststart via system ffmpeg (can seek to find moov),
-  // then probe the normalized output
+  // Strategy 3: full re-encode (libx264) via system ffmpeg — handles fMP4 (iPhone),
+  // HEVC in MP4, and moov-at-end files that stream-copy (-c copy) cannot remux.
+  // We only encode the first 5 seconds (probe only, not final output) so this is fast.
   const normalizedPath = path.join(tmpDir, 'normalized.mp4');
   try {
     await execFileAsync('ffmpeg', [
       '-v', 'error',
       '-y',
       '-i', inputPath,
-      '-c', 'copy',
+      '-c:v', 'libx264',
+      '-c:a', 'aac',
+      '-preset', 'ultrafast',
+      '-t', '5',
       '-movflags', '+faststart',
       normalizedPath,
     ], { maxBuffer: 10 * 1024 * 1024 });
